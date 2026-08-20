@@ -357,6 +357,12 @@ static int choose_tone_vowel(const telex_ctx_t *ctx)
                   !token_is_vowel(&ctx->word[end + 1]));
     vn_vowel_t a = ctx->word[start].vowel_type;
     vn_vowel_t b = ctx->word[end].vowel_type;
+    /* In qua/quạ and related syllables, q+u is an onset glide; the tone
+     * belongs to the following a rather than to u. */
+    if (a == VH_U && (b == VH_A || b == VH_ACR) && start > 0 &&
+        ctx->word[start - 1].vowel_type == VH_NONE &&
+        ctx->word[start - 1].literal == 'q')
+        return end;
     if (a == VH_I && (b == VH_O || b == VH_OCI || b == VH_OHR ||
                       b == VH_U || b == VH_UHR))
         return end; /* iô/iơ/iư: giò, giờ, giữ, giống */
