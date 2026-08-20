@@ -293,7 +293,12 @@ void telex_restore_boundary(telex_ctx_t *ctx)
     if (!ctx->boundary_saved || ctx->word_len != 0) return;
     memcpy(ctx->word, ctx->saved_word, sizeof(ctx->word));
     ctx->word_len = ctx->saved_word_len;
-    ctx->rendered_len = ctx->saved_rendered_len;
+    /* Re-enter the restored syllable as a fresh composition. */
+    ctx->rendered_len = ctx->word_len;
+    ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
+    ctx->deleted_token_valid = false;
+    ctx->undo_valid = false;
     ctx->boundary_saved = false;
 }
 
