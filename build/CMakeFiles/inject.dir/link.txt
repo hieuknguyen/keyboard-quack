@@ -1,0 +1,2 @@
+/usr/bin/ar qc libinject.a CMakeFiles/inject.dir/inject_autogen/mocs_compilation.cpp.o CMakeFiles/inject.dir/src/inject/uinput_inject.c.o
+/usr/bin/ranlib libinject.a

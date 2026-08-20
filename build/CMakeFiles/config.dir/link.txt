@@ -1,0 +1,2 @@
+/usr/bin/ar qc libconfig.a CMakeFiles/config.dir/config_autogen/mocs_compilation.cpp.o CMakeFiles/config.dir/src/config/config.c.o
+/usr/bin/ranlib libconfig.a

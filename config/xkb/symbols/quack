@@ -1,0 +1,58 @@
+// keyboard-quack - Vietnamese marks on AltGr (Level3) as dead keys
+// Install: sudo cp quack /usr/share/X11/xkb/symbols/custom
+// Activate: gsettings set org.gnome.desktop.input-sources sources "[('xkb','custom')]"
+//
+// AltGr (Right Alt) combinations:
+//   AltGr+s = dead acute  (á é í ó ú ý)
+//   AltGr+f = dead grave  (à è ì ò ù ỳ)
+//   AltGr+r = dead hook   (ả ẻ ỉ ỏ ủ ỷ)
+//   AltGr+x = dead tilde  (ã ẽ ĩ õ ũ ỹ)
+//   AltGr+j = dead dot below (ạ ẹ ị ọ ụ ỵ)
+//   AltGr+w = dead breve  (ă)
+//   AltGr+z = dead horn   (ơ ư)
+//   AltGr+o = dead circumflex (â ê ô)
+//   AltGr+d = đ (direct)
+// Compose rule (X11 en_US.UTF-8 Compose): tone first, mark second, dot last.
+//   e.g. ấ = AltGr+s AltGr+o a    ậ = AltGr+o AltGr+j a
+
+partial alphanumeric_keys
+xkb_symbols "basic" {
+    include "us(basic)"
+    include "level3(ralt_switch)"
+
+    // s = dead acute
+    key <AC02> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ s, S, dead_acute, dead_acute ] };
+
+    // f = dead grave
+    key <AC04> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ f, F, dead_grave, dead_grave ] };
+
+    // r = dead hook
+    key <AD04> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ r, R, dead_hook, dead_hook ] };
+
+    // x = dead tilde
+    key <AB02> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ x, X, dead_tilde, dead_tilde ] };
+
+    // j = dead dot below
+    key <AC07> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ j, J, dead_belowdot, dead_belowdot ] };
+
+    // w = dead breve
+    key <AD02> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ w, W, dead_breve, dead_breve ] };
+
+    // z = dead horn
+    key <AB01> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ z, Z, dead_horn, dead_horn ] };
+
+    // o = dead circumflex
+    key <AD09> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ o, O, dead_circumflex, dead_circumflex ] };
+
+    // d = đ (direct keysym)
+    key <AC03> { type[Group1] = "FOUR_LEVEL",
+                 symbols[Group1] = [ d, D, dstroke, dstroke ] };
+};

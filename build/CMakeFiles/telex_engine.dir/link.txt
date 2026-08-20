@@ -1,0 +1,2 @@
+/usr/bin/ar qc libtelex_engine.a CMakeFiles/telex_engine.dir/telex_engine_autogen/mocs_compilation.cpp.o CMakeFiles/telex_engine.dir/src/engine/telex.c.o
+/usr/bin/ranlib libtelex_engine.a

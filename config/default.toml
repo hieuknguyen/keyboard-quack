@@ -1,0 +1,22 @@
+# keyboard-quack configuration
+
+# Input method: telex or vni
+input_method = "telex"
+
+# Toggle key: ctrl_space, capslock, or grave
+toggle_key = "ctrl_space"
+
+# Auto-start on login
+auto_start = false
+
+# Show system tray icon
+show_tray = true
+
+# Enable Vietnamese input in terminal emulators
+enable_terminal = true
+
+# Enable Vietnamese input in password fields (NOT recommended)
+enable_password = false
+
+# Debug mode (verbose logging)
+debug = false
