@@ -281,11 +281,37 @@ void telex_reset_tracking(telex_ctx_t *ctx)
 
 void telex_commit_boundary(telex_ctx_t *ctx)
 {
-    ctx->saved_word_len = ctx->word_len;
-    ctx->saved_rendered_len = ctx->rendered_len;
-    memcpy(ctx->saved_word, ctx->word, sizeof(ctx->word));
-    ctx->boundary_saved = (ctx->word_len > 0);
+    if (ctx->word_len > 0) {
+        int n = ctx->boundary_count;
+        if (n >= TELEX_MAX_BOUNDARIES) {
+            memmove(ctx->boundary_words, ctx->boundary_words + 1,
+                    (TELEX_MAX_BOUNDARIES - 1) * sizeof(ctx->boundary_words[0]));
+            memmove(ctx->boundary_lens, ctx->boundary_lens + 1,
+                    (TELEX_MAX_BOUNDARIES - 1) * sizeof(ctx->boundary_lens[0]));
+            n = TELEX_MAX_BOUNDARIES - 1;
+        }
+        memcpy(ctx->boundary_words[n], ctx->word, sizeof(ctx->word));
+        ctx->boundary_lens[n] = ctx->word_len;
+        ctx->boundary_count = n + 1;
+        memcpy(ctx->saved_word, ctx->word, sizeof(ctx->word));
+        ctx->saved_word_len = ctx->word_len;
+        ctx->boundary_saved = true;
+    }
     telex_reset_tracking(ctx);
+}
+
+void telex_restore_boundary(telex_ctx_t *ctx)
+{
+    if (ctx->boundary_count <= 0 || ctx->word_len != 0) return;
+    int n = --ctx->boundary_count;
+    memcpy(ctx->word, ctx->boundary_words[n], sizeof(ctx->word));
+    ctx->word_len = ctx->boundary_lens[n];
+    ctx->rendered_len = ctx->word_len;
+    ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
+    ctx->deleted_token_valid = false;
+    ctx->undo_valid = false;
+    ctx->boundary_saved = (ctx->boundary_count > 0);
 }
 
 void telex_restore_boundary(telex_ctx_t *ctx)

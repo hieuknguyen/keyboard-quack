@@ -7,6 +7,7 @@
 #define TELEX_MAX_OUTPUT 64
 #define TELEX_MAX_WORD   TELEX_MAX_OUTPUT
 #define TELEX_MAX_SUFFIX 16
+#define TELEX_MAX_BOUNDARIES 32
 
 /* Actions the engine tells the caller to perform */
 typedef enum {
@@ -64,6 +65,9 @@ typedef struct {
     int           saved_word_len;
     int           saved_rendered_len;
     bool          boundary_saved;
+    telex_token_t boundary_words[TELEX_MAX_BOUNDARIES][TELEX_MAX_WORD];
+    int           boundary_lens[TELEX_MAX_BOUNDARIES];
+    int           boundary_count;
     bool          shape_cancelled;
     int           shape_cancelled_len;
     telex_token_t undo_word[TELEX_MAX_WORD];
