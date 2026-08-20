@@ -406,9 +406,10 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                                               .tone = TONE_NONE };
                     ctx->word[ctx->word_len++] = literal;
                 }
-                /* This key is now literal; subsequent tone keys may act
-                 * normally on the word again. */
-                ctx->shape_cancelled = false;
+                /* Keep tone processing disabled for the remainder of this
+                 * word: the repeated key is now literal (hiéu+s -> hieus),
+                 * so later letters must not reapply a tone to the old vowel. */
+                ctx->shape_cancelled = true;
             } else {
                 ctx->word[idx].tone = tone;
             }
@@ -582,8 +583,6 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                 return retype_word(ctx);
             }
         }
-        /* Any ordinary character starts a fresh interpretation pass. */
-        ctx->shape_cancelled = false;
         ctx->word[ctx->word_len++] = t;
 
         /* A coda can change the orthographic nucleus (e.g. muowj is
