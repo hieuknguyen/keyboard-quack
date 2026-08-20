@@ -181,7 +181,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                             tctx->deleted_token_valid = true;
                     }
                     if (tctx->rendered_len > 0)
-                        tctx->rendered_len--;
+                    tctx->rendered_len = tctx->word_len;
                     tctx->undo_valid = false;
                     if (tctx->word_len == 0) {
                         /* A held Backspace can generate many repeats.  Once
