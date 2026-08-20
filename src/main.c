@@ -145,7 +145,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             telex_commit_boundary(tctx);
         } else if (code == KC_BACKSPACE) {
             if (pressed || repeated) {
-                if (tctx->boundary_saved) {
+                if (tctx->boundary_saved && tctx->word_len == 0) {
                     telex_reset_tracking(tctx);
                     telex_restore_boundary(tctx);
                 } else {

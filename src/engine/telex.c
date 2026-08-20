@@ -380,7 +380,6 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
     telex_result_t r; result_init(&r);
     if (!pressed) return r;
     if (!ctx->enabled) { r.action = ACT_OUTPUT; return r; }
-    if (ctx->word_len == 0) ctx->boundary_saved = false;
     memcpy(ctx->undo_word, ctx->word, sizeof(ctx->word));
     ctx->undo_word_len = ctx->word_len;
     ctx->undo_rendered_len = ctx->rendered_len;
