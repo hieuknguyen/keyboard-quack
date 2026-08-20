@@ -144,7 +144,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     /* === Non-letter keys: pass through with repeat support === */
     if (!is_letter_key(code)) {
         if (code == KC_SPACE && pressed) {
-            telex_commit_boundary(tctx);
+            telex_append_literal(tctx, ' ');
         } else if (code == KC_BACKSPACE) {
             if (!pressed && !repeated) {
                 backspace_down = 0;
@@ -157,10 +157,9 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             }
             if (pressed || repeated) {
                 after_backspace = 1;
-                if (tctx->boundary_count > 0 && tctx->word_len == 0) {
-                    telex_reset_tracking(tctx);
-                    telex_restore_boundary(tctx);
-                } else {
+                {
+                    /* The full document is kept in word[]; delete its last
+                     * token directly, including spaces. */
                     /* Keep the composition buffer in lockstep with the
                      * character that the physical Backspace removes.  The
                      * previous undo-based approach restored a stale token

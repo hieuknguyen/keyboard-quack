@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define TELEX_MAX_OUTPUT 64
+#define TELEX_MAX_OUTPUT 4096
 #define TELEX_MAX_WORD   TELEX_MAX_OUTPUT
 #define TELEX_MAX_SUFFIX 16
 #define TELEX_MAX_BOUNDARIES 32
@@ -91,6 +91,7 @@ void telex_set_enabled(telex_ctx_t *ctx, bool enabled);
  * modify a stale vowel.
  */
 void telex_reset_tracking(telex_ctx_t *ctx);
+void telex_append_literal(telex_ctx_t *ctx, uint32_t cp);
 void telex_commit_boundary(telex_ctx_t *ctx);
 void telex_restore_boundary(telex_ctx_t *ctx);
 void telex_undo_last(telex_ctx_t *ctx);

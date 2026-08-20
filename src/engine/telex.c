@@ -279,6 +279,21 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->deleted_token_valid = false;
 }
 
+void telex_append_literal(telex_ctx_t *ctx, uint32_t cp)
+{
+    if (ctx->word_len >= TELEX_MAX_WORD) return;
+    ctx->word[ctx->word_len].literal = cp;
+    ctx->word[ctx->word_len].vowel_type = VH_NONE;
+    ctx->word[ctx->word_len].tone = TONE_NONE;
+    ctx->word_len++;
+    ctx->rendered_len = ctx->word_len;
+    ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
+    ctx->deleted_token_valid = false;
+    ctx->undo_valid = false;
+}
+
+
 void telex_commit_boundary(telex_ctx_t *ctx)
 {
     if (ctx->word_len > 0) {
