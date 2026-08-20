@@ -394,11 +394,6 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
         }
         int idx = choose_tone_vowel(ctx);
         if (idx >= 0) {
-            /* In the iêu/iuê family, the e before a final u is the
-             * circumflex nucleus (hieus -> hiếu). */
-            if (ctx->word[idx].vowel_type == VH_E && idx + 1 < ctx->word_len &&
-                ctx->word[idx + 1].vowel_type == VH_U)
-                ctx->word[idx].vowel_type = VH_ECI;
             int tone = keycode == KEY_S ? TONE_SAC : keycode == KEY_F ? TONE_HUYEN :
                        keycode == KEY_R ? TONE_HOI : keycode == KEY_X ? TONE_NGA : TONE_NANG;
             if (ctx->word[idx].tone == tone) {
