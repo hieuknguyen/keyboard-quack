@@ -65,6 +65,7 @@ typedef struct {
     int           saved_rendered_len;
     bool          boundary_saved;
     bool          shape_cancelled;
+    int           shape_cancelled_len;
     telex_token_t undo_word[TELEX_MAX_WORD];
     int           undo_word_len;
     int           undo_rendered_len;

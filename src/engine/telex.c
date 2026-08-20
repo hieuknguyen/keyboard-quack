@@ -275,6 +275,7 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->word_len = 0;
     ctx->rendered_len = 0;
     ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
 }
 
 void telex_commit_boundary(telex_ctx_t *ctx)
@@ -425,6 +426,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                  * word: the repeated key is now literal (hiéu+s -> hieus),
                  * so later letters must not reapply a tone to the old vowel. */
                 ctx->shape_cancelled = true;
+                ctx->shape_cancelled_len = ctx->word_len;
             } else {
                 ctx->word[idx].tone = tone;
             }
@@ -530,6 +532,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                         ctx->word_len++;
                     }
                     ctx->shape_cancelled = true;
+                    ctx->shape_cancelled_len = ctx->word_len;
                     return retype_word(ctx);
                 }
             }

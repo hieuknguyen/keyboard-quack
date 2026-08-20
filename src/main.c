@@ -168,6 +168,14 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                         tctx->saved_word_len = 0;
                         tctx->boundary_saved = false;
                         tctx->shape_cancelled = false;
+                        tctx->shape_cancelled_len = 0;
+                    } else if (tctx->shape_cancelled &&
+                               tctx->word_len < tctx->shape_cancelled_len) {
+                        /* Backspaced through the literal modifier that
+                         * caused cancellation; tone processing is active
+                         * again for this shortened word. */
+                        tctx->shape_cancelled = false;
+                        tctx->shape_cancelled_len = 0;
                     }
                 }
             }
