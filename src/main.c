@@ -56,7 +56,6 @@ static int shift_held = 0;
 static int alt_held = 0;
 static int gui_held = 0;
 static int ctrl_shift_latched = 0;
-static int backspace_rearm_lock = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
@@ -146,15 +145,11 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             telex_commit_boundary(tctx);
         } else if (code == KC_BACKSPACE) {
             if (!pressed && !repeated) {
-                backspace_rearm_lock = 0;
-            } else if (repeated && backspace_rearm_lock) {
-                return;
             }
             if (pressed || repeated) {
                 if (tctx->boundary_saved && tctx->word_len == 0) {
                     telex_reset_tracking(tctx);
                     telex_restore_boundary(tctx);
-                    backspace_rearm_lock = 1;
                 } else {
                     /* Keep the composition buffer in lockstep with the
                      * character that the physical Backspace removes.  The
