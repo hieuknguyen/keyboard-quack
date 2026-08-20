@@ -154,8 +154,20 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                      * previous undo-based approach restored a stale token
                      * after a redraw (tone/shape), causing the next key to
                      * resurrect or duplicate text. */
-                    if (tctx->word_len > 0)
+                    tctx->deleted_token_valid = false;
+                    if (tctx->word_len > 0) {
+                        tctx->deleted_token = tctx->word[tctx->word_len - 1];
                         tctx->word_len--;
+                        if (tctx->word_len > 0 &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_NONE &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_A &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_E &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_O &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_U &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_I &&
+                            tctx->word[tctx->word_len - 1].vowel_type != VH_Y)
+                            tctx->deleted_token_valid = true;
+                    }
                     if (tctx->rendered_len > 0)
                         tctx->rendered_len--;
                     tctx->undo_valid = false;

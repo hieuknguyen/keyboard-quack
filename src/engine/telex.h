@@ -70,6 +70,8 @@ typedef struct {
     int           undo_word_len;
     int           undo_rendered_len;
     bool          undo_valid;
+    telex_token_t deleted_token;
+    bool          deleted_token_valid;
 
     /* Debug */
     char debug_buf[64];

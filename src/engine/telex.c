@@ -276,6 +276,7 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->rendered_len = 0;
     ctx->shape_cancelled = false;
     ctx->shape_cancelled_len = 0;
+    ctx->deleted_token_valid = false;
 }
 
 void telex_commit_boundary(telex_ctx_t *ctx)
@@ -530,12 +531,20 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
             for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == marked) {
                     ctx->word[i].vowel_type = plain;
-                    if (ctx->word_len < TELEX_MAX_WORD) {
+                if (ctx->word_len < TELEX_MAX_WORD) {
                         int pos = (i + 1 < ctx->word_len) ? ctx->word_len : i + 1;
+                        int added = 0;
+                        if (ctx->deleted_token_valid &&
+                            ctx->deleted_token.vowel_type == VH_I &&
+                            pos == ctx->word_len) {
+                            ctx->word[pos++] = ctx->deleted_token;
+                            ctx->deleted_token_valid = false;
+                            added = 1;
+                        }
                         ctx->word[pos].literal = vowel_base_cp(plain);
                         ctx->word[pos].vowel_type = plain;
                         ctx->word[pos].tone = TONE_NONE;
-                        ctx->word_len++;
+                        ctx->word_len += 1 + added;
                     }
                     ctx->shape_cancelled = true;
                     ctx->shape_cancelled_len = ctx->word_len;
