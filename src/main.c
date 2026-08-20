@@ -56,6 +56,7 @@ static int shift_held = 0;
 static int alt_held = 0;
 static int gui_held = 0;
 static int ctrl_shift_latched = 0;
+static int after_backspace = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
@@ -147,6 +148,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             if (!pressed && !repeated) {
             }
             if (pressed || repeated) {
+                after_backspace = 1;
                 if (tctx->boundary_saved && tctx->word_len == 0) {
                     telex_reset_tracking(tctx);
                     telex_restore_boundary(tctx);
@@ -208,6 +210,13 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         return;
     }
 
+    if (pressed && after_backspace) {
+        tctx->shape_cancelled = false;
+        tctx->shape_cancelled_len = 0;
+        tctx->deleted_token_valid = false;
+        tctx->undo_valid = false;
+        after_backspace = 0;
+    }
     telex_result_t result = telex_process(tctx, code, pressed);
 
     switch (result.action) {
