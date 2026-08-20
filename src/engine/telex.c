@@ -380,6 +380,21 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
     char ch = keycode_to_char(keycode);
     if (!ch) { telex_reset_tracking(ctx); return r; }
 
+    /* Once a repeated modifier has been made literal, keep every following
+     * key literal until the word boundary.  This prevents a later vowel from
+     * triggering shape rules again (hieus+e -> hieuse). */
+    if (ctx->shape_cancelled) {
+        telex_token_t literal = { .literal = (uint32_t)ch,
+                                  .vowel_type = VH_NONE,
+                                  .tone = TONE_NONE };
+        if (ctx->word_len < TELEX_MAX_WORD)
+            ctx->word[ctx->word_len++] = literal;
+        r.action = ACT_OUTPUT;
+        result_add(&r, (uint32_t)ch);
+        ctx->rendered_len++;
+        return r;
+    }
+
     /* Tone keys modify the nucleus of the current vowel cluster. */
     if (!ctx->shape_cancelled &&
         (keycode == KEY_S || keycode == KEY_F || keycode == KEY_R ||
