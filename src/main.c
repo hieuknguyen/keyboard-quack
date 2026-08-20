@@ -57,6 +57,7 @@ static int alt_held = 0;
 static int gui_held = 0;
 static int ctrl_shift_latched = 0;
 static int after_backspace = 0;
+static int backspace_down = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
@@ -145,6 +146,13 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         if (code == KC_SPACE && pressed) {
             telex_commit_boundary(tctx);
         } else if (code == KC_BACKSPACE) {
+            if (!pressed && !repeated) {
+                backspace_down = 0;
+            } else if (repeated && !backspace_down) {
+                return;
+            } else if (pressed) {
+                backspace_down = 1;
+            }
             if (!pressed && !repeated) {
             }
             if (pressed || repeated) {
