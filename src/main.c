@@ -149,7 +149,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             }
             if (pressed || repeated) {
                 after_backspace = 1;
-                if (tctx->boundary_saved && tctx->word_len == 0) {
+                if (tctx->boundary_count > 0 && tctx->word_len == 0) {
                     telex_reset_tracking(tctx);
                     telex_restore_boundary(tctx);
                 } else {
