@@ -57,6 +57,7 @@ static int alt_held = 0;
 static int gui_held = 0;
 static int ctrl_shift_latched = 0;
 static int backspace_rearm_lock = 0;
+static int backspace_edit_pending = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
@@ -151,6 +152,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                 return;
             }
             if (pressed || repeated) {
+                backspace_edit_pending = 1;
                 if (tctx->boundary_saved && tctx->word_len == 0) {
                     telex_reset_tracking(tctx);
                     telex_restore_boundary(tctx);
