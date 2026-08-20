@@ -483,7 +483,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
          * after a coda: muonw, muow, muojw -> mươ... */
         if (keycode == KEY_W) {
             int oi = -1, ui = -1;
-            for (int i = limit - 1; i >= 0; i--) {
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == VH_O && oi < 0) oi = i;
                 else if (ctx->word[i].vowel_type == VH_U && oi >= 0) { ui = i; break; }
             }
@@ -495,7 +495,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
             /* Likewise, uaw is a flexible spelling of ưa: w belongs to
              * the u, not the following a. */
             int ai = -1; ui = -1;
-            for (int i = limit - 1; i >= 0; i--) {
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == VH_A && ai < 0) ai = i;
                 else if (ctx->word[i].vowel_type == VH_U && ai >= 0) { ui = i; break; }
             }
@@ -504,7 +504,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                 return retype_word(ctx);
             }
         }
-        for (int i = limit - 1; i >= 0; i--) {
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
             if (!token_is_vowel(&ctx->word[i])) continue;
             vn_vowel_t nv = VH_NONE;
             if (keycode == KEY_W) nv = horn_of(ctx->word[i].vowel_type);
@@ -518,7 +518,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
 
     /* dd -> đ */
     if (keycode == KEY_D) {
-        for (int i = limit - 1; i >= 0; i--) {
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
             if (ctx->word[i].vowel_type == VH_NONE &&
                 ctx->word[i].literal == VN_dd) {
                 ctx->word[i].literal = 'd';
@@ -548,7 +548,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
     /* A trailing d can also act as the đ marker after the rest of the
      * syllable has already been typed (dood -> đô with the d converted). */
     if (keycode == KEY_D) {
-        for (int i = limit - 1; i >= 0; i--) {
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
             if (ctx->word[i].vowel_type == VH_NONE && ctx->word[i].literal == 'd') {
                 ctx->word[i].literal = VN_dd;
                 return retype_word(ctx);
@@ -564,7 +564,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
                                 keycode == KEY_E ? VH_ECI : VH_OCI;
             vn_vowel_t plain = keycode == KEY_A ? VH_A :
                                keycode == KEY_E ? VH_E : VH_O;
-            for (int i = limit - 1; i >= 0; i--) {
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == marked) {
                     ctx->word[i].vowel_type = plain;
                 if (ctx->word_len < TELEX_MAX_WORD) {
@@ -594,7 +594,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed)
         if (keycode == KEY_A || keycode == KEY_E || keycode == KEY_O) {
             vn_vowel_t base = kc_to_vowel_type(keycode);
             int prior = -1, has_coda = 0;
-            for (int i = limit - 1; i >= 0; i--) {
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == base) { prior = i; break; }
                 if (!token_is_vowel(&ctx->word[i])) has_coda = 1;
             }
