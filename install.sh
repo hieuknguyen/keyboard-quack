@@ -35,7 +35,11 @@ cd "$SCRIPT_DIR"
 
 # 2. Install binaries to /usr/local/bin
 echo "[2/6] Cài đặt file thực thi vào /usr/local/bin..."
-install -m 755 "$SCRIPT_DIR/build/quack" /usr/local/bin/quack
+if [ -f "$SCRIPT_DIR/build/quack" ]; then
+    install -m 755 "$SCRIPT_DIR/build/quack" /usr/local/bin/quack
+elif [ -f "$SCRIPT_DIR/quack" ]; then
+    install -m 755 "$SCRIPT_DIR/quack" /usr/local/bin/quack
+fi
 if [ -f "$SCRIPT_DIR/build/quack-config" ]; then
     install -m 755 "$SCRIPT_DIR/build/quack-config" /usr/local/bin/quack-config
 fi
@@ -61,9 +65,10 @@ fi
 
 # 5. Install XKB Layout & Desktop Entry
 echo "[5/6] Cài đặt XKB symbols và Desktop Entry..."
-# System-wide XKB symbol
+# System-wide XKB symbols
 if [ -d /usr/share/X11/xkb/symbols ]; then
     cp "$SCRIPT_DIR/config/xkb/symbols/quack" /usr/share/X11/xkb/symbols/quack
+    cp "$SCRIPT_DIR/config/xkb/symbols/quack" /usr/share/X11/xkb/symbols/custom
 fi
 
 # User-space XKB symbol

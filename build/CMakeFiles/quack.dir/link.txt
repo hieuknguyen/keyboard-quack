@@ -1,1 +1,1 @@
-/usr/bin/c++ CMakeFiles/quack.dir/quack_autogen/mocs_compilation.cpp.o CMakeFiles/quack.dir/src/main.c.o -o quack  libtelex_engine.a libcapture.a libinject.a libconfig.a -lm -ldl 
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/quack.dir/quack_autogen/mocs_compilation.cpp.o CMakeFiles/quack.dir/src/main.c.o -o quack  libtelex_engine.a libcapture.a libinject.a libconfig.a -lm -ldl 

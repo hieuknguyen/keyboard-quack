@@ -72,7 +72,7 @@ include CMakeFiles/inject.dir/flags.make
 inject_autogen/timestamp: /usr/lib/qt6/libexec/moc
 inject_autogen/timestamp: CMakeFiles/inject.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/hieuknguyen/keyboard-quack/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Automatic MOC for target inject"
-	/usr/bin/cmake -E cmake_autogen /home/hieuknguyen/keyboard-quack/build/CMakeFiles/inject_autogen.dir/AutogenInfo.json ""
+	/usr/bin/cmake -E cmake_autogen /home/hieuknguyen/keyboard-quack/build/CMakeFiles/inject_autogen.dir/AutogenInfo.json Release
 	/usr/bin/cmake -E touch /home/hieuknguyen/keyboard-quack/build/inject_autogen/timestamp
 
 CMakeFiles/inject.dir/inject_autogen/mocs_compilation.cpp.o: CMakeFiles/inject.dir/flags.make

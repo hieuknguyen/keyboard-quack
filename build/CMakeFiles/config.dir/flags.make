@@ -7,11 +7,11 @@ C_DEFINES =
 
 C_INCLUDES = -I/home/hieuknguyen/keyboard-quack/build/config_autogen/include -I/home/hieuknguyen/keyboard-quack/src/config
 
-C_FLAGS = -std=gnu11
+C_FLAGS = -O3 -DNDEBUG -std=gnu11
 
 CXX_DEFINES = 
 
 CXX_INCLUDES = -I/home/hieuknguyen/keyboard-quack/build/config_autogen/include -I/home/hieuknguyen/keyboard-quack/src/config
 
-CXX_FLAGS = -std=gnu++17
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17
 

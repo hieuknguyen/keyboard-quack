@@ -205,42 +205,7 @@ static int deadkey_type(inject_ctx_t *ctx, uint32_t cp)
     return 0;
 }
 
-/* Is the quack/custom XKB layout active? (gsettings on GNOME) */
-static int check_sources_has_custom(const char *cmd)
-{
-    FILE *p = popen(cmd, "r");
-    if (!p) return 0;
-    char buf[512];
-    if (fgets(buf, sizeof(buf), p) == NULL) {
-        pclose(p);
-        return 0;
-    }
-    pclose(p);
-    return strstr(buf, "quack") != NULL || strstr(buf, "custom") != NULL;
-}
 
-static int detect_layout_active(void)
-{
-    /* Try with the current environment first. */
-    if (check_sources_has_custom(
-            "gsettings get org.gnome.desktop.input-sources sources 2>/dev/null"))
-        return 1;
-
-    /* Under sudo the environment is stripped: query the real user's session
-     * bus by reading DBUS_SESSION_BUS_ADDRESS from their gnome-shell. */
-    const char *sudo_user = getenv("SUDO_USER");
-    if (sudo_user && sudo_user[0]) {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd),
-            "ADDR=$(tr '\\0' '\\n' < /proc/$(pgrep -u %s gnome-shell | head -1)/environ 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'); "
-            "runuser -u %s -- env DBUS_SESSION_BUS_ADDRESS=\"$ADDR\" "
-            "gsettings get org.gnome.desktop.input-sources sources 2>/dev/null",
-            sudo_user, sudo_user);
-        if (check_sources_has_custom(cmd))
-            return 1;
-    }
-    return 0;
-}
 
 /* ------------------------------------------------------------------ */
 /* X11 XTest fallback (Xorg only)                                      */
@@ -344,15 +309,12 @@ int inject_init(inject_ctx_t *ctx)
         fprintf(stderr, "[inject] Warning: uinput device creation failed\n");
     }
 
-    /* Dead-key layout active? -> best path (X11 + Wayland) */
-    if (detect_layout_active()) {
-        ctx->layout_active = 1;
-        ctx->backend = 4;
-        fprintf(stderr, "[inject] Backend: dead-key layout (quack) active\n");
-        return 0;
-    }
+    /* Dead-key layout is the primary injection mechanism for keyboard-quack (Wayland & X11) */
+    ctx->layout_active = 1;
+    ctx->backend = 4;
+    fprintf(stderr, "[inject] Backend: dead-key layout (quack) active\n");
 
-    /* X11 XTest fallback */
+    /* Also load X11 API as fallback if available */
     if (load_x11_api() == 0 && getenv("DISPLAY")) {
         void *dpy = X.p_XOpenDisplay(NULL);
         if (dpy) {
@@ -362,18 +324,9 @@ int inject_init(inject_ctx_t *ctx)
             ctx->x11_ok = 1;
             ctx->keycode = find_spare_keycode(dpy);
             ctx->bspc_keycode = (int)X.p_XKeysymToKeycode(dpy, 0xFF08);
-            ctx->backend = (ctx->keycode > 0) ? 1 : 3;
-            fprintf(stderr, "[inject] Backend: X11+XTest\n");
-            return 0;
         }
     }
 
-    ctx->backend = 3;
-    fprintf(stderr,
-            "[inject] Backend: uinput-only (no Unicode).\n"
-            "[inject] Install the quack layout for Vietnamese support:\n"
-            "[inject]   sudo cp config/xkb/symbols/quack /usr/share/X11/xkb/symbols/\n"
-            "[inject]   gsettings set org.gnome.desktop.input-sources sources \"[('xkb','quack')]\"\n");
     return 0;
 }
 
