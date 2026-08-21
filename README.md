@@ -1,4 +1,4 @@
-# keyboard-quack 🦆
+# keyboard-quack
 
 Bộ gõ tiếng Việt Telex độc lập, siêu nhẹ và bảo mật cao cho Linux (hỗ trợ cả **Wayland** và **X11**).
 
