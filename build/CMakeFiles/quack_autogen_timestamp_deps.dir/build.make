@@ -68,9 +68,9 @@ include CMakeFiles/quack_autogen_timestamp_deps.dir/progress.make
 
 CMakeFiles/quack_autogen_timestamp_deps: libtelex_engine.a
 CMakeFiles/quack_autogen_timestamp_deps: libcapture.a
+CMakeFiles/quack_autogen_timestamp_deps: libconfig.a
 CMakeFiles/quack_autogen_timestamp_deps: /usr/lib/qt6/libexec/moc
 CMakeFiles/quack_autogen_timestamp_deps: libinject.a
-CMakeFiles/quack_autogen_timestamp_deps: libconfig.a
 
 quack_autogen_timestamp_deps: CMakeFiles/quack_autogen_timestamp_deps
 quack_autogen_timestamp_deps: CMakeFiles/quack_autogen_timestamp_deps.dir/build.make
