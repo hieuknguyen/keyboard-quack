@@ -3,8 +3,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "telex.h"
-#include "unicode_map.h"
+#include "engine/telex.h"
+#include "engine/unicode_map.h"
 
 /* Map keycodes: q-p = 16-25, a-l = 30-38, z-m = 44-50 */
 static uint16_t kc(char c)

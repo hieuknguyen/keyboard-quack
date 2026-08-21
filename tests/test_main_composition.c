@@ -20,6 +20,8 @@ int capture_get_poll_fd(capture_ctx_t *ctx) { (void)ctx; return -1; }
 int inject_init(inject_ctx_t *ctx) { (void)ctx; return 0; }
 int inject_key(inject_ctx_t *ctx, uint16_t keycode, bool pressed)
 { (void)ctx; (void)keycode; (void)pressed; return 0; }
+int inject_key_val(inject_ctx_t *ctx, uint16_t keycode, int val)
+{ (void)ctx; (void)keycode; (void)val; return 0; }
 int inject_unicode(inject_ctx_t *ctx, uint32_t codepoint)
 { (void)ctx; (void)codepoint; return 0; }
 int inject_string(inject_ctx_t *ctx, const uint32_t *codepoints, int len)
@@ -110,6 +112,118 @@ int main(void)
     assert(telex.word_len == 1);
     assert(telex.word[0].literal == 'd'); /* Just 'd', not 'dd' or modifying 'dem' */
     puts("Test 4 ('d' isolation across spaces) passed.");
+
+    /* Test 5: Backspacing over cancelling key restores cancellation state so tone can be toggled */
+    telex_init(&telex);
+    /* Type "hieeus" -> "hiếu" */
+    /* h(35) i(23) e(18) e(18) u(22) s(31) */
+    const uint16_t keys5[] = { 35, 23, 18, 18, 22, 31 };
+    for (size_t i = 0; i < sizeof(keys5) / sizeof(keys5[0]); i++) {
+        send_key(&telex, &inject, keys5[i], 1);
+        send_key(&telex, &inject, keys5[i], 0);
+    }
+    /* Type 'e' -> "hiéue" (cancelled shape) */
+    send_key(&telex, &inject, 18, 1);
+    send_key(&telex, &inject, 18, 0);
+    assert(telex.shape_cancelled == true);
+
+    /* Backspace over 'e' -> "hiéu" (shape_cancelled should be reset to false) */
+    send_key(&telex, &inject, KC_BACKSPACE, 1);
+    send_key(&telex, &inject, KC_BACKSPACE, 0);
+    assert(telex.shape_cancelled == false);
+
+    /* Type 's' -> tone on 'e' is cancelled, yielding "hieus" */
+    send_key(&telex, &inject, 31, 1);
+    send_key(&telex, &inject, 31, 0);
+    assert(telex.word_len == 5);
+    assert(telex.word[0].literal == 'h');
+    assert(telex.word[1].vowel_type == VH_I);
+    assert(telex.word[2].vowel_type == VH_E && telex.word[2].tone == TONE_NONE);
+    assert(telex.word[3].vowel_type == VH_U);
+    assert(telex.word[4].literal == 's');
+    puts("Test 5 (shape cancellation reset on backspace & tone toggle) passed.");
+
+    /* Test 6: Holding Backspace back to a previous word allows tone modification on that word */
+    telex_init(&telex);
+    /* Type "tooi hoc" */
+    /* t(20) o(24) o(24) i(23) space, h(35) o(24) c(46) */
+    const uint16_t keys6[] = { 20, 24, 24, 23, KC_SPACE, 35, 24, 46 };
+    for (size_t i = 0; i < sizeof(keys6) / sizeof(keys6[0]); i++) {
+        send_key(&telex, &inject, keys6[i], 1);
+        send_key(&telex, &inject, keys6[i], 0);
+    }
+    assert(telex.boundary_count == 1);
+    assert(telex.word_len == 3);
+
+    /* Hold Backspace: 1 press + 3 repeats = 4 backspaces total (deletes 'c', 'o', 'h', and the space) */
+    struct input_event ev_bsp_press = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 1 };
+    process_event(&telex, &inject, &ev_bsp_press);
+    struct input_event ev_bsp_rep = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 2 };
+    for (int i = 0; i < 3; i++) {
+        process_event(&telex, &inject, &ev_bsp_rep);
+    }
+    struct input_event ev_bsp_rel = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 0 };
+    process_event(&telex, &inject, &ev_bsp_rel);
+
+    /* "tooi" ("tôi") must be restored in buffer */
+    assert(telex.word_len == 3);
+    assert(telex.word[0].literal == 't');
+    assert(telex.word[1].vowel_type == VH_OCI);
+    assert(telex.word[2].vowel_type == VH_I);
+
+    /* Typing 's' should apply tone to 'ô' -> "tối" */
+    send_key(&telex, &inject, 31, 1); send_key(&telex, &inject, 31, 0); // s
+    assert(telex.word[1].tone == TONE_SAC);
+
+    /* Now hold Backspace to erase all of "tối" (1 press + 3 repeats = 4 backspaces) */
+    process_event(&telex, &inject, &ev_bsp_press);
+    for (int i = 0; i < 3; i++) {
+        process_event(&telex, &inject, &ev_bsp_rep);
+    }
+    process_event(&telex, &inject, &ev_bsp_rel);
+
+    /* Buffer must now be completely clean */
+    assert(telex.word_len == 0);
+    assert(telex.boundary_count == 0);
+
+    /* Typing new word "day" should be completely fresh and isolated */
+    send_key(&telex, &inject, 32, 1); send_key(&telex, &inject, 32, 0); // d
+    send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0); // a
+    send_key(&telex, &inject, 21, 1); send_key(&telex, &inject, 21, 0); // y
+    assert(telex.word_len == 3);
+    assert(telex.word[0].literal == 'd');
+    assert(telex.word[1].vowel_type == VH_A);
+    assert(telex.word[2].vowel_type == VH_Y);
+    puts("Test 6 (held backspace word restore & tone processing) passed.");
+
+    /* Test 7: Horn toggle 'a'+'w'+'w' -> 'aw' and 'w' at start of word as literal */
+    telex_init(&telex);
+    /* 'w' at start of word is literal 'w' */
+    send_key(&telex, &inject, 17, 1); send_key(&telex, &inject, 17, 0); // w
+    assert(telex.word_len == 1);
+    assert(telex.word[0].literal == 'w' && telex.word[0].vowel_type == VH_NONE);
+
+    /* Horn toggle: 'a' + 'w' -> 'ă', + 'w' -> 'aw' */
+    telex_init(&telex);
+    send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0); // a
+    send_key(&telex, &inject, 17, 1); send_key(&telex, &inject, 17, 0); // w -> ă
+    assert(telex.word_len == 1 && telex.word[0].vowel_type == VH_ACR);
+    send_key(&telex, &inject, 17, 1); send_key(&telex, &inject, 17, 0); // w -> aw
+    assert(telex.word_len == 2 && telex.word[0].vowel_type == VH_A && telex.word[1].literal == 'w');
+    puts("Test 7 (horn toggle) passed.");
+
+    /* Test 8: Letter autorepeat (val == 2) */
+    telex_init(&telex);
+    struct input_event ev_a = { .type = EV_KEY, .code = 30, .value = 1 }; // a
+    process_event(&telex, &inject, &ev_a);
+    ev_a.value = 2; // repeat -> â
+    process_event(&telex, &inject, &ev_a);
+    assert(telex.word_len == 1 && telex.word[0].vowel_type == VH_ACI);
+    process_event(&telex, &inject, &ev_a); // repeat -> aa
+    assert(telex.word_len == 2 && telex.shape_cancelled == true);
+    process_event(&telex, &inject, &ev_a); // repeat -> aaa
+    assert(telex.word_len == 3);
+    puts("Test 8 (letter autorepeat) passed.");
 
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;

@@ -376,6 +376,7 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->word_len = 0;
     ctx->rendered_len = 0;
     ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
     ctx->boundary_count = 0;
@@ -402,9 +403,12 @@ void telex_commit_word(telex_ctx_t *ctx)
     ctx->word_len = 0;
     ctx->rendered_len = 0;
     ctx->shape_cancelled = false;
+    ctx->shape_cancelled_len = 0;
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
 }
+
+static uint32_t token_cp(const telex_token_t *t);
 
 void telex_handle_backspace(telex_ctx_t *ctx)
 {
@@ -413,9 +417,13 @@ void telex_handle_backspace(telex_ctx_t *ctx)
         ctx->deleted_token_valid = true;
         ctx->word_len--;
         ctx->rendered_len = ctx->word_len;
+        for (int i = 0; i < ctx->word_len; i++) {
+            ctx->rendered_cps[i] = token_cp(&ctx->word[i]);
+        }
         ctx->undo_valid = false;
-        if (ctx->word_len == 0) {
+        if (ctx->word_len == 0 || (ctx->shape_cancelled && ctx->word_len < ctx->shape_cancelled_len)) {
             ctx->shape_cancelled = false;
+            ctx->shape_cancelled_len = 0;
         }
     } else if (ctx->word_len == 0 && ctx->boundary_count > 0) {
         /* Backspacing across the delimiter: restore the previous word into active buffer */
@@ -423,7 +431,11 @@ void telex_handle_backspace(telex_ctx_t *ctx)
         memcpy(ctx->word, ctx->boundary_words[n], sizeof(ctx->word[0]) * ctx->boundary_lens[n]);
         ctx->word_len = ctx->boundary_lens[n];
         ctx->rendered_len = ctx->word_len;
+        for (int i = 0; i < ctx->word_len; i++) {
+            ctx->rendered_cps[i] = token_cp(&ctx->word[i]);
+        }
         ctx->shape_cancelled = false;
+        ctx->shape_cancelled_len = 0;
         ctx->undo_valid = false;
         ctx->deleted_token_valid = false;
     }
@@ -435,6 +447,7 @@ void telex_undo_last(telex_ctx_t *ctx)
     memcpy(ctx->word, ctx->undo_word, sizeof(ctx->word));
     ctx->word_len = ctx->undo_word_len;
     ctx->rendered_len = ctx->undo_rendered_len;
+    memcpy(ctx->rendered_cps, ctx->undo_rendered_cps, sizeof(ctx->rendered_cps));
     ctx->undo_valid = false;
 }
 
@@ -459,12 +472,32 @@ static telex_result_t retype_word(telex_ctx_t *ctx)
 {
     telex_result_t r;
     result_init(&r);
-    r.action = ACT_BKSP_OUTPUT;
-    r.backspace_count = ctx->rendered_len;
-    for (int i = 0; i < ctx->word_len; i++) {
-        result_add(&r, token_cp(&ctx->word[i]));
+
+    uint32_t new_cps[TELEX_MAX_WORD];
+    int new_len = ctx->word_len;
+    for (int i = 0; i < new_len; i++) {
+        new_cps[i] = token_cp(&ctx->word[i]);
     }
-    ctx->rendered_len = r.output_len;
+
+    /* Find longest common prefix with current screen representation (diff-based backspace) */
+    int prefix = 0;
+    while (prefix < ctx->rendered_len && prefix < new_len &&
+           ctx->rendered_cps[prefix] == new_cps[prefix]) {
+        prefix++;
+    }
+
+    r.action = ACT_BKSP_OUTPUT;
+    r.backspace_count = ctx->rendered_len - prefix;
+    for (int i = prefix; i < new_len; i++) {
+        result_add(&r, new_cps[i]);
+    }
+
+    /* Update rendered state */
+    ctx->rendered_len = new_len;
+    for (int i = 0; i < new_len; i++) {
+        ctx->rendered_cps[i] = new_cps[i];
+    }
+
     return r;
 }
 
@@ -533,6 +566,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     memcpy(ctx->undo_word, ctx->word, sizeof(ctx->word));
     ctx->undo_word_len = ctx->word_len;
     ctx->undo_rendered_len = ctx->rendered_len;
+    memcpy(ctx->undo_rendered_cps, ctx->rendered_cps, sizeof(ctx->rendered_cps));
     ctx->undo_valid = true;
 
     char ch = keycode_to_char(keycode);
@@ -555,7 +589,9 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
             ctx->word[ctx->word_len++] = literal;
         r.action = ACT_OUTPUT;
         result_add(&r, (uint32_t)typed_char);
-        ctx->rendered_len++;
+        if (ctx->rendered_len < TELEX_MAX_WORD) {
+            ctx->rendered_cps[ctx->rendered_len++] = (uint32_t)typed_char;
+        }
         return r;
     }
 
@@ -586,6 +622,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
                     ctx->word[ctx->word_len++] = literal;
                 }
                 ctx->shape_cancelled = true;
+                ctx->shape_cancelled_len = ctx->word_len;
             } else {
                 ctx->word[idx].tone = tone;
             }
@@ -596,6 +633,35 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     /* Horn/Breve marks (w, z) */
     if (keycode == KEY_W || keycode == KEY_Z) {
         if (keycode == KEY_W) {
+            /* 1. Repeating 'w' on existing horned vowels cancels horn and restores plain vowel + 'w' */
+            int has_horned = 0;
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
+                if (ctx->word[i].vowel_type == VH_ACR || ctx->word[i].vowel_type == VH_OHR || ctx->word[i].vowel_type == VH_UHR) {
+                    has_horned = 1;
+                    break;
+                }
+            }
+            if (has_horned) {
+                for (int i = 0; i < ctx->word_len; i++) {
+                    if (ctx->word[i].vowel_type == VH_ACR) ctx->word[i].vowel_type = VH_A;
+                    else if (ctx->word[i].vowel_type == VH_OHR) ctx->word[i].vowel_type = VH_O;
+                    else if (ctx->word[i].vowel_type == VH_UHR) ctx->word[i].vowel_type = VH_U;
+                }
+                if (ctx->word_len < TELEX_MAX_WORD) {
+                    telex_token_t literal = {
+                        .literal = (uint32_t)typed_char,
+                        .vowel_type = VH_NONE,
+                        .tone = TONE_NONE,
+                        .is_upper = is_upper
+                    };
+                    ctx->word[ctx->word_len++] = literal;
+                }
+                ctx->shape_cancelled = true;
+                ctx->shape_cancelled_len = ctx->word_len;
+                return retype_word(ctx);
+            }
+
+            /* 2. uo + w -> ươ */
             int oi = -1, ui = -1;
             for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == VH_O && oi < 0) oi = i;
@@ -606,6 +672,8 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
                 ctx->word[oi].vowel_type = VH_OHR;
                 return retype_word(ctx);
             }
+
+            /* 4. ua + w -> ưa */
             int ai = -1; ui = -1;
             for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == VH_A && ai < 0) ai = i;
@@ -642,6 +710,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
                     ctx->word[ctx->word_len++] = lit;
                 }
                 ctx->shape_cancelled = true;
+                ctx->shape_cancelled_len = ctx->word_len;
                 return retype_word(ctx);
             }
         }
@@ -689,6 +758,7 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
                         ctx->word[ctx->word_len++] = literal;
                     }
                     ctx->shape_cancelled = true;
+                    ctx->shape_cancelled_len = ctx->word_len;
                     return retype_word(ctx);
                 }
             }
@@ -780,8 +850,11 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     }
 
     r.action = ACT_OUTPUT;
-    result_add(&r, token_cp(&t));
-    ctx->rendered_len++;
+    uint32_t out_cp = token_cp(&t);
+    result_add(&r, out_cp);
+    if (ctx->rendered_len < TELEX_MAX_WORD) {
+        ctx->rendered_cps[ctx->rendered_len++] = out_cp;
+    }
     return r;
 }
 

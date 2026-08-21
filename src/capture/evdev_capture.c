@@ -77,14 +77,18 @@ int capture_init(capture_ctx_t *ctx)
             continue;
         }
 
+        /* Get device name */
+        char name[256] = "Unknown";
+        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        if (strcmp(name, "keyboard-quack") == 0) {
+            close(fd);
+            continue;
+        }
+
         kbd_device_t *kbd = &ctx->keyboards[ctx->count];
         kbd->fd = fd;
         kbd->grabbed = false;
         strncpy(kbd->path, path, sizeof(kbd->path) - 1);
-
-        /* Get device name */
-        char name[256] = "Unknown";
-        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
         strncpy(kbd->name, name, sizeof(kbd->name) - 1);
 
         /* Add to epoll */

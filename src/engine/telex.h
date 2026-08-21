@@ -50,6 +50,7 @@ typedef struct {
     telex_token_t word[TELEX_MAX_WORD];
     int           word_len;
     int           rendered_len;
+    uint32_t      rendered_cps[TELEX_MAX_WORD];
 
     /* Boundary stack for backspacing across words safely */
     telex_token_t boundary_words[TELEX_MAX_BOUNDARIES][TELEX_MAX_WORD];
@@ -58,11 +59,13 @@ typedef struct {
 
     /* Shape cancellation (within current syllable) */
     bool          shape_cancelled;
+    int           shape_cancelled_len;
 
     /* Undo support */
     telex_token_t undo_word[TELEX_MAX_WORD];
     int           undo_word_len;
     int           undo_rendered_len;
+    uint32_t      undo_rendered_cps[TELEX_MAX_WORD];
     bool          undo_valid;
 
     /* Deleted token support */

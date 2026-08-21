@@ -377,14 +377,6 @@ int inject_init(inject_ctx_t *ctx)
     return 0;
 }
 
-int inject_key(inject_ctx_t *ctx, uint16_t keycode, bool pressed)
-{
-    if (ctx->uinput_fd < 0) return -1;
-    emit(ctx->uinput_fd, EV_KEY, keycode, pressed ? 1 : 0);
-    emit_syn(ctx->uinput_fd);
-    return 0;
-}
-
 /* Physical keycodes (linux/input-event-codes.h), NOT alphabetical */
 static int ascii_to_keycode(uint32_t cp)
 {
@@ -399,6 +391,19 @@ static int ascii_to_keycode(uint32_t cp)
     if (cp == '\n') return KEY_ENTER;
     if (cp == '\t') return KEY_TAB;
     return -1;
+}
+
+int inject_key_val(inject_ctx_t *ctx, uint16_t keycode, int val)
+{
+    if (ctx->uinput_fd < 0) return -1;
+    emit(ctx->uinput_fd, EV_KEY, keycode, val);
+    emit_syn(ctx->uinput_fd);
+    return 0;
+}
+
+int inject_key(inject_ctx_t *ctx, uint16_t keycode, bool pressed)
+{
+    return inject_key_val(ctx, keycode, pressed ? 1 : 0);
 }
 
 int inject_unicode(inject_ctx_t *ctx, uint32_t codepoint)
@@ -493,8 +498,10 @@ int inject_bksp_retype(inject_ctx_t *ctx, int bksp_count,
         return 0;
     }
 
-    /* Dead-key / uinput backends: all events on the same device, ordered */
-    inject_backspace(ctx, bksp_count);
+    if (bksp_count > 0) {
+        inject_backspace(ctx, bksp_count);
+        usleep(1500);
+    }
     return inject_string(ctx, codepoints, len);
 }
 

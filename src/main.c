@@ -57,7 +57,6 @@ static int alt_held = 0;
 static int gui_held = 0;
 static int caps_lock = 0;
 static int ctrl_shift_latched = 0;
-static int backspace_down = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
@@ -141,7 +140,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     /* When Ctrl/Alt/GUI held, pass through everything and commit word */
     if (ctrl_held || alt_held || gui_held) {
         telex_reset_tracking(tctx);
-        inject_key(ictx, code, pressed);
+        inject_key_val(ictx, code, val);
         return;
     }
 
@@ -151,36 +150,28 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             if (pressed || repeated)
                 telex_commit_word(tctx);
         } else if (code == KC_BACKSPACE) {
-            if (!pressed && !repeated) {
-                backspace_down = 0;
-            } else if (repeated && !backspace_down) {
-                return;
-            } else if (pressed) {
-                backspace_down = 1;
-            }
             if (pressed || repeated) {
                 telex_handle_backspace(tctx);
+                inject_key(ictx, KC_BACKSPACE, true);
+                inject_key(ictx, KC_BACKSPACE, false);
             }
+            return;
         } else if (pressed || repeated) {
             telex_commit_word(tctx);
         }
 
-        if (pressed || repeated) {
-            inject_key(ictx, code, true);
-        } else {
-            inject_key(ictx, code, false);
-        }
+        inject_key_val(ictx, code, val);
         return;
     }
 
     /* === Letter keys: process through Telex engine (press only) === */
     if (!vn_enabled) {
-        inject_key(ictx, code, pressed);
+        inject_key_val(ictx, code, val);
         return;
     }
 
     bool is_upper = (shift_held ^ caps_lock) != 0;
-    telex_result_t result = telex_process(tctx, code, pressed, is_upper);
+    telex_result_t result = telex_process(tctx, code, pressed || repeated, is_upper);
 
     switch (result.action) {
     case ACT_NONE:

@@ -40,6 +40,11 @@ int inject_init(inject_ctx_t *ctx);
 int inject_key(inject_ctx_t *ctx, uint16_t keycode, bool pressed);
 
 /*
+ * Inject a key event with exact evdev value: 0=release, 1=press, 2=repeat.
+ */
+int inject_key_val(inject_ctx_t *ctx, uint16_t keycode, int val);
+
+/*
  * Inject a single Unicode character (works for ASCII too).
  */
 int inject_unicode(inject_ctx_t *ctx, uint32_t codepoint);
