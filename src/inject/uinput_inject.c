@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include "uinput_inject.h"
+#include "../engine/unicode_map.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,26 +164,30 @@ static const vn_dead_key_t vn_dead_keys[] = {
     { 0x0111, 0, 0, 0, 0, KEY_D },
 };
 
-static const vn_dead_key_t *vn_lookup(uint32_t cp)
+static const vn_dead_key_t *vn_lookup(uint32_t cp, bool *is_upper)
 {
+    uint32_t lower_cp = vn_to_lower(cp, is_upper);
     for (size_t i = 0; i < sizeof(vn_dead_keys) / sizeof(vn_dead_keys[0]); i++) {
-        if (vn_dead_keys[i].cp == cp) return &vn_dead_keys[i];
+        if (vn_dead_keys[i].cp == lower_cp) return &vn_dead_keys[i];
     }
     return NULL;
 }
 
 /* Type one Vietnamese char using dead keys + AltGr on the uinput device.
  * Sequence: AltGr down, [tone] [mark] [dot] (each pressed/released), AltGr up,
- * then the base letter at level 1.  đ is a direct AltGr+d. */
+ * then the base letter (with Shift if uppercase). đ is a direct AltGr+d. */
 static int deadkey_type(inject_ctx_t *ctx, uint32_t cp)
 {
-    const vn_dead_key_t *vk = vn_lookup(cp);
+    bool is_upper = false;
+    const vn_dead_key_t *vk = vn_lookup(cp, &is_upper);
     if (!vk) return -1;
 
     if (vk->direct) {
         inject_key(ctx, KEY_RIGHTALT, true);
+        if (is_upper) inject_key(ctx, KEY_LEFTSHIFT, true);
         inject_key(ctx, vk->direct, true);
         inject_key(ctx, vk->direct, false);
+        if (is_upper) inject_key(ctx, KEY_LEFTSHIFT, false);
         inject_key(ctx, KEY_RIGHTALT, false);
         return 0;
     }
@@ -192,8 +197,11 @@ static int deadkey_type(inject_ctx_t *ctx, uint32_t cp)
     if (vk->mark) { inject_key(ctx, vk->mark, true);  inject_key(ctx, vk->mark, false); }
     if (vk->dot)  { inject_key(ctx, vk->dot, true);   inject_key(ctx, vk->dot, false); }
     inject_key(ctx, KEY_RIGHTALT, false);
+
+    if (is_upper) inject_key(ctx, KEY_LEFTSHIFT, true);
     inject_key(ctx, vk->base, true);
     inject_key(ctx, vk->base, false);
+    if (is_upper) inject_key(ctx, KEY_LEFTSHIFT, false);
     return 0;
 }
 
@@ -409,7 +417,8 @@ int inject_unicode(inject_ctx_t *ctx, uint32_t codepoint)
     }
 
     /* Vietnamese via dead keys (works on X11 + Wayland) */
-    if (ctx->layout_active && vn_lookup(codepoint)) {
+    bool dummy_upper = false;
+    if (ctx->layout_active && vn_lookup(codepoint, &dummy_upper)) {
         return deadkey_type(ctx, codepoint);
     }
 

@@ -4,15 +4,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define TELEX_MAX_OUTPUT 4096
-#define TELEX_MAX_WORD   TELEX_MAX_OUTPUT
-#define TELEX_MAX_SUFFIX 16
+#define TELEX_MAX_OUTPUT 128
+#define TELEX_MAX_WORD   128
 #define TELEX_MAX_BOUNDARIES 32
 
 /* Actions the engine tells the caller to perform */
 typedef enum {
     ACT_NONE,        /* Do nothing (swallow) */
-    ACT_OUTPUT,      /* Output characters in output_buf */
+    ACT_OUTPUT,      /* Output characters in output */
     ACT_BKSP_OUTPUT, /* Send N backspaces, then output (inject_bksp_retype) */
 } telex_action_t;
 
@@ -36,49 +35,39 @@ typedef enum {
 
 /* One rendered character in the syllable currently being composed. */
 typedef struct {
-    uint32_t   literal;     /* ASCII consonant, or ignored for a vowel */
+    uint32_t   literal;     /* ASCII consonant or custom codepoint */
     vn_vowel_t vowel_type;  /* VH_NONE for a literal/consonant */
-    int        tone;
+    int        tone;        /* TONE_NONE, TONE_SAC, ... */
+    bool       is_upper;    /* true if uppercase */
 } telex_token_t;
 
 typedef struct {
     bool enabled;
 
     /*
-     * Keep the whole current letter run, rather than only its last vowel.
-     * That lets a late Telex modifier update an earlier vowel in clusters
-     * such as oi (toio -> tôi) and ieu (hieues -> hiếu).
+     * Active syllable being composed (isolated to the current word).
      */
     telex_token_t word[TELEX_MAX_WORD];
     int           word_len;
+    int           rendered_len;
 
-    /* What has already been sent to the target application. */
-    uint32_t rendered[TELEX_MAX_OUTPUT];
-    int      rendered_len;
-    uint32_t   last_vowel_base;
-    vn_vowel_t last_vowel_type;
-    int        last_tone;
-    uint32_t   suffix[TELEX_MAX_SUFFIX];
-    int        suffix_count;
-    bool       last_was_d;
-    telex_token_t saved_word[TELEX_MAX_WORD];
-    int           saved_word_len;
-    int           saved_rendered_len;
-    bool          boundary_saved;
+    /* Boundary stack for backspacing across words safely */
     telex_token_t boundary_words[TELEX_MAX_BOUNDARIES][TELEX_MAX_WORD];
     int           boundary_lens[TELEX_MAX_BOUNDARIES];
     int           boundary_count;
+
+    /* Shape cancellation (within current syllable) */
     bool          shape_cancelled;
-    int           shape_cancelled_len;
+
+    /* Undo support */
     telex_token_t undo_word[TELEX_MAX_WORD];
     int           undo_word_len;
     int           undo_rendered_len;
     bool          undo_valid;
+
+    /* Deleted token support */
     telex_token_t deleted_token;
     bool          deleted_token_valid;
-
-    /* Debug */
-    char debug_buf[64];
 } telex_ctx_t;
 
 void telex_init(telex_ctx_t *ctx);
@@ -86,20 +75,26 @@ void telex_reset(telex_ctx_t *ctx);
 void telex_set_enabled(telex_ctx_t *ctx, bool enabled);
 
 /*
- * Clear vowel tracking. Call when a non-letter key (space, punctuation,
- * backspace, digits, etc.) is passed through, so a later tone key does not
- * modify a stale vowel.
+ * Clear vowel tracking. Call when a non-letter key or focus change occurs.
  */
 void telex_reset_tracking(telex_ctx_t *ctx);
-void telex_append_literal(telex_ctx_t *ctx, uint32_t cp);
-void telex_commit_boundary(telex_ctx_t *ctx);
-void telex_restore_boundary(telex_ctx_t *ctx);
+
+/*
+ * Commit the current word to history and reset active buffer.
+ */
+void telex_commit_word(telex_ctx_t *ctx);
+
+/*
+ * Handle Backspace key on the composition buffer.
+ */
+void telex_handle_backspace(telex_ctx_t *ctx);
+
 void telex_undo_last(telex_ctx_t *ctx);
 
 /*
  * Process a keypress (letter key, press event only).
  * Returns a result telling the caller what to do.
  */
-telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed);
+telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, bool is_upper);
 
 #endif /* TELEX_H */

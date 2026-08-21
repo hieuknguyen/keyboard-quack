@@ -55,8 +55,8 @@ static int ctrl_held = 0;
 static int shift_held = 0;
 static int alt_held = 0;
 static int gui_held = 0;
+static int caps_lock = 0;
 static int ctrl_shift_latched = 0;
-static int after_backspace = 0;
 static int backspace_down = 0;
 
 static void toggle_vietnamese(telex_ctx_t *tctx)
@@ -94,9 +94,6 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                 toggle_vietnamese(tctx);
                 ctrl_shift_latched = 1;
             }
-            if (!pressed && !ctrl_held && !alt_held && !gui_held) {
-                /* Ctrl released - nothing special */
-            }
             inject_key(ictx, code, pressed);
         }
         return;
@@ -127,6 +124,13 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         }
         return;
     }
+    if (code == KC_CAPS) {
+        if (pressed && !repeated) {
+            caps_lock = !caps_lock;
+        }
+        inject_key(ictx, code, pressed);
+        return;
+    }
 
     /* Ctrl+Space toggle (only on press) */
     if (code == KC_SPACE && ctrl_held && pressed) {
@@ -134,7 +138,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         return;
     }
 
-    /* When Ctrl/Alt/GUI held, pass through everything */
+    /* When Ctrl/Alt/GUI held, pass through everything and commit word */
     if (ctrl_held || alt_held || gui_held) {
         telex_reset_tracking(tctx);
         inject_key(ictx, code, pressed);
@@ -143,8 +147,9 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
 
     /* === Non-letter keys: pass through with repeat support === */
     if (!is_letter_key(code)) {
-        if (code == KC_SPACE && pressed) {
-            telex_append_literal(tctx, ' ');
+        if (code == KC_SPACE) {
+            if (pressed || repeated)
+                telex_commit_word(tctx);
         } else if (code == KC_BACKSPACE) {
             if (!pressed && !repeated) {
                 backspace_down = 0;
@@ -153,56 +158,13 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             } else if (pressed) {
                 backspace_down = 1;
             }
-            if (!pressed && !repeated) {
-            }
             if (pressed || repeated) {
-                after_backspace = 1;
-                {
-                    /* The full document is kept in word[]; delete its last
-                     * token directly, including spaces. */
-                    /* Keep the composition buffer in lockstep with the
-                     * character that the physical Backspace removes.  The
-                     * previous undo-based approach restored a stale token
-                     * after a redraw (tone/shape), causing the next key to
-                     * resurrect or duplicate text. */
-                    tctx->deleted_token_valid = false;
-                    if (tctx->word_len > 0) {
-                        tctx->deleted_token = tctx->word[tctx->word_len - 1];
-                        tctx->word_len--;
-                        if (tctx->word_len > 0 &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_NONE &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_A &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_E &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_O &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_U &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_I &&
-                            tctx->word[tctx->word_len - 1].vowel_type != VH_Y)
-                            tctx->deleted_token_valid = true;
-                    }
-                    if (tctx->rendered_len > 0)
-                    tctx->rendered_len = tctx->word_len;
-                    tctx->undo_valid = false;
-                    if (tctx->word_len == 0) {
-                        /* A held Backspace can generate many repeats.  Once
-                         * the composition is empty, discard every pending
-                         * snapshot so a later key can never resurrect the
-                         * deleted word. */
-                        tctx->rendered_len = 0;
-                        tctx->shape_cancelled = false;
-                        tctx->shape_cancelled_len = 0;
-                    } else if (tctx->shape_cancelled &&
-                               tctx->word_len < tctx->shape_cancelled_len) {
-                        /* Backspaced through the literal modifier that
-                         * caused cancellation; tone processing is active
-                         * again for this shortened word. */
-                        tctx->shape_cancelled = false;
-                        tctx->shape_cancelled_len = 0;
-                    }
-                }
+                telex_handle_backspace(tctx);
             }
-        } else {
-            telex_reset_tracking(tctx);
+        } else if (pressed || repeated) {
+            telex_commit_word(tctx);
         }
+
         if (pressed || repeated) {
             inject_key(ictx, code, true);
         } else {
@@ -217,14 +179,8 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         return;
     }
 
-    if (pressed && after_backspace) {
-        tctx->shape_cancelled = false;
-        tctx->shape_cancelled_len = 0;
-        tctx->deleted_token_valid = false;
-        tctx->undo_valid = false;
-        after_backspace = 0;
-    }
-    telex_result_t result = telex_process(tctx, code, pressed);
+    bool is_upper = (shift_held ^ caps_lock) != 0;
+    telex_result_t result = telex_process(tctx, code, pressed, is_upper);
 
     switch (result.action) {
     case ACT_NONE:

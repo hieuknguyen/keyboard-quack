@@ -54,5 +54,5 @@ xkb_symbols "basic" {
 
     // d = đ (direct keysym)
     key <AC03> { type[Group1] = "FOUR_LEVEL",
-                 symbols[Group1] = [ d, D, dstroke, dstroke ] };
+                 symbols[Group1] = [ d, D, dstroke, Dstroke ] };
 };

@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "telex.h"
 #include "unicode_map.h"
-
-#define K(a) ((a) >= 'a' && (a) <= 'z' ? (uint16_t)(16 + (a) - 'a' + ((a) >= 'q' ? 0 : 0) + ((a) > 'p' ? -10 : 0) + ((a) >= 'z' ? 4 : 0)) : 0)
 
 /* Map keycodes: q-p = 16-25, a-l = 30-38, z-m = 44-50 */
 static uint16_t kc(char c)
 {
+    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
     switch (c) {
     case 'q': return 16; case 'w': return 17; case 'e': return 18;
     case 'r': return 19; case 't': return 20; case 'y': return 21;
@@ -46,11 +46,13 @@ static void type_str(telex_ctx_t *ctx, const char *s)
     printf("  typing \"%s\":\n", s);
     for (const char *p = s; *p; p++) {
         if (*p == ' ') {
-            /* space = flush, show state */
+            telex_commit_word(ctx);
+            printf("    ' ' -> (commit)\n");
             continue;
         }
         uint16_t key = kc(*p);
-        telex_result_t r = telex_process(ctx, key, true);
+        bool is_upper = (*p >= 'A' && *p <= 'Z');
+        telex_result_t r = telex_process(ctx, key, true, is_upper);
         char buf[16];
         switch (r.action) {
         case ACT_OUTPUT:
@@ -99,6 +101,20 @@ int main(void)
     type_str(&ctx, "xe");
     telex_init(&ctx);
     type_str(&ctx, "xeen");
+
+    printf("\n=== TEST: sentences without reset (word isolation) ===\n");
+    telex_init(&ctx);
+    type_str(&ctx, "xin chao cac ban");
+    type_str(&ctx, "toi ddi hoc ve");
+    type_str(&ctx, "con meof mowis");
+
+    printf("\n=== TEST: capitalization ===\n");
+    telex_init(&ctx);
+    type_str(&ctx, "Tooi");
+    telex_init(&ctx);
+    type_str(&ctx, "VIET");
+    telex_init(&ctx);
+    type_str(&ctx, "DDi");
 
     printf("\n=== TEST: tone at end ===\n");
     telex_init(&ctx);
