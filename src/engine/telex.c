@@ -532,23 +532,35 @@ static int choose_tone_vowel(const telex_ctx_t *ctx)
     vn_vowel_t a = ctx->word[start].vowel_type;
     vn_vowel_t b = ctx->word[end].vowel_type;
 
-    /* qu+a / qu+ă / qu+e / qu+o */
-    if (a == VH_U && (b == VH_A || b == VH_ACR || b == VH_E || b == VH_ECI || b == VH_O || b == VH_OCI || b == VH_OHR) &&
-        start > 0 && ctx->word[start - 1].vowel_type == VH_NONE &&
-        (ctx->word[start - 1].literal == 'q' || ctx->word[start - 1].literal == 'Q'))
+    /* qu+vowel: qu is onset, tone is always on vowel nucleus (quá, quán, quốc, quở, quý...) */
+    if (start > 0 && !token_is_vowel(&ctx->word[start - 1]) &&
+        (ctx->word[start - 1].literal == 'q' || ctx->word[start - 1].literal == 'Q') &&
+        a == VH_U) {
         return end;
+    }
 
-    /* gi+o / gi+ơ / gi+u / gi+ư */
-    if (a == VH_I && (b == VH_O || b == VH_OCI || b == VH_OHR || b == VH_U || b == VH_UHR) &&
-        start > 0 && ctx->word[start - 1].vowel_type == VH_NONE &&
-        (ctx->word[start - 1].literal == 'g' || ctx->word[start - 1].literal == 'G'))
+    /* gi+vowel: gi is onset, tone is always on following vowel (giá, già, giảm, gió, giúp, giữa, giẻ...) */
+    if (start > 0 && !token_is_vowel(&ctx->word[start - 1]) &&
+        (ctx->word[start - 1].literal == 'g' || ctx->word[start - 1].literal == 'G') &&
+        a == VH_I) {
         return end;
+    }
 
-    /* Closed diphthongs: iê, uô, ươ */
-    if (closed && ((a == VH_I && (b == VH_E || b == VH_ECI || b == VH_O || b == VH_OCI || b == VH_OHR)) ||
-                   (a == VH_U && (b == VH_O || b == VH_OCI || b == VH_OHR)) ||
-                   (a == VH_UHR && (b == VH_O || b == VH_OCI || b == VH_OHR))))
-        return end;
+    /* If syllable is closed (followed by a consonant coda), tone goes on the main vowel */
+    if (closed) {
+        /* Diphthongs iê, uô, ươ, oa, oă, oâ, oe, uy, uê */
+        if ((a == VH_I && (b == VH_E || b == VH_ECI || b == VH_O || b == VH_OCI || b == VH_OHR)) ||
+            (a == VH_U && (b == VH_A || b == VH_ACR || b == VH_ACI || b == VH_E || b == VH_ECI || b == VH_O || b == VH_OCI || b == VH_OHR || b == VH_Y)) ||
+            (a == VH_UHR && (b == VH_O || b == VH_OCI || b == VH_OHR)) ||
+            (a == VH_O && (b == VH_A || b == VH_ACR || b == VH_ACI || b == VH_E || b == VH_ECI))) {
+            return end;
+        }
+    } else {
+        /* Open syllables: if second vowel has circumflex/horn (e.g. uê in thuế, huệ), tone goes on end */
+        if (b == VH_ECI || b == VH_OCI || b == VH_OHR) {
+            return end;
+        }
+    }
 
     return start;
 }
@@ -630,62 +642,86 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
         }
     }
 
-    /* Horn/Breve marks (w, z) */
-    if (keycode == KEY_W || keycode == KEY_Z) {
-        if (keycode == KEY_W) {
-            /* 1. Repeating 'w' on existing horned vowels cancels horn and restores plain vowel + 'w' */
-            int has_horned = 0;
-            for (int i = ctx->word_len - 1; i >= 0; i--) {
-                if (ctx->word[i].vowel_type == VH_ACR || ctx->word[i].vowel_type == VH_OHR || ctx->word[i].vowel_type == VH_UHR) {
-                    has_horned = 1;
-                    break;
-                }
-            }
-            if (has_horned) {
-                for (int i = 0; i < ctx->word_len; i++) {
-                    if (ctx->word[i].vowel_type == VH_ACR) ctx->word[i].vowel_type = VH_A;
-                    else if (ctx->word[i].vowel_type == VH_OHR) ctx->word[i].vowel_type = VH_O;
-                    else if (ctx->word[i].vowel_type == VH_UHR) ctx->word[i].vowel_type = VH_U;
-                }
-                if (ctx->word_len < TELEX_MAX_WORD) {
-                    telex_token_t literal = {
-                        .literal = (uint32_t)typed_char,
-                        .vowel_type = VH_NONE,
-                        .tone = TONE_NONE,
-                        .is_upper = is_upper
-                    };
-                    ctx->word[ctx->word_len++] = literal;
-                }
-                ctx->shape_cancelled = true;
-                ctx->shape_cancelled_len = ctx->word_len;
-                return retype_word(ctx);
-            }
-
-            /* 2. uo + w -> ươ */
-            int oi = -1, ui = -1;
-            for (int i = ctx->word_len - 1; i >= 0; i--) {
-                if (ctx->word[i].vowel_type == VH_O && oi < 0) oi = i;
-                else if (ctx->word[i].vowel_type == VH_U && oi >= 0) { ui = i; break; }
-            }
-            if (ui >= 0 && oi > ui) {
-                ctx->word[ui].vowel_type = VH_UHR;
-                ctx->word[oi].vowel_type = VH_OHR;
-                return retype_word(ctx);
-            }
-
-            /* 4. ua + w -> ưa */
-            int ai = -1; ui = -1;
-            for (int i = ctx->word_len - 1; i >= 0; i--) {
-                if (ctx->word[i].vowel_type == VH_A && ai < 0) ai = i;
-                else if (ctx->word[i].vowel_type == VH_U && ai >= 0) { ui = i; break; }
-            }
-            if (ui >= 0 && ai > ui) {
-                ctx->word[ui].vowel_type = VH_UHR;
-                return retype_word(ctx);
+    /* Tone removal key (z) in Telex */
+    if (keycode == KEY_Z) {
+        int has_tone = 0;
+        for (int i = 0; i < ctx->word_len; i++) {
+            if (ctx->word[i].tone != TONE_NONE) {
+                ctx->word[i].tone = TONE_NONE;
+                has_tone = 1;
             }
         }
+        if (has_tone) {
+            return retype_word(ctx);
+        }
+        /* If no tone to clear, fall through so 'z' is treated as regular consonant */
+    }
+
+    /* Horn/Breve marks (w) */
+    if (keycode == KEY_W) {
+        /* 1. Repeating 'w' on existing horned vowels cancels horn and restores plain vowel + 'w' */
+        int has_horned = 0;
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
+            if (ctx->word[i].vowel_type == VH_ACR || ctx->word[i].vowel_type == VH_OHR || ctx->word[i].vowel_type == VH_UHR) {
+                has_horned = 1;
+                break;
+            }
+        }
+        if (has_horned) {
+            for (int i = 0; i < ctx->word_len; i++) {
+                if (ctx->word[i].vowel_type == VH_ACR) ctx->word[i].vowel_type = VH_A;
+                else if (ctx->word[i].vowel_type == VH_OHR) ctx->word[i].vowel_type = VH_O;
+                else if (ctx->word[i].vowel_type == VH_UHR) ctx->word[i].vowel_type = VH_U;
+            }
+            if (ctx->word_len < TELEX_MAX_WORD) {
+                telex_token_t literal = {
+                    .literal = (uint32_t)typed_char,
+                    .vowel_type = VH_NONE,
+                    .tone = TONE_NONE,
+                    .is_upper = is_upper
+                };
+                ctx->word[ctx->word_len++] = literal;
+            }
+            ctx->shape_cancelled = true;
+            ctx->shape_cancelled_len = ctx->word_len;
+            return retype_word(ctx);
+        }
+
+        /* 2. uo + w -> ươ (or qu + o + w -> quơ) */
+        int oi = -1, ui = -1;
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
+            if (ctx->word[i].vowel_type == VH_O && oi < 0) oi = i;
+            else if (ctx->word[i].vowel_type == VH_U && oi >= 0) { ui = i; break; }
+        }
+        if (ui >= 0 && oi > ui) {
+            if (ui > 0 && ctx->word[ui - 1].vowel_type == VH_NONE &&
+                (ctx->word[ui - 1].literal == 'q' || ctx->word[ui - 1].literal == 'Q')) {
+                ctx->word[oi].vowel_type = VH_OHR;
+            } else {
+                ctx->word[ui].vowel_type = VH_UHR;
+                ctx->word[oi].vowel_type = VH_OHR;
+            }
+            return retype_word(ctx);
+        }
+
+        /* 3. ua + w -> ưa */
+        int ai = -1; ui = -1;
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
+            if (ctx->word[i].vowel_type == VH_A && ai < 0) ai = i;
+            else if (ctx->word[i].vowel_type == VH_U && ai >= 0) { ui = i; break; }
+        }
+        if (ui >= 0 && ai > ui) {
+            ctx->word[ui].vowel_type = VH_UHR;
+            return retype_word(ctx);
+        }
+
         for (int i = ctx->word_len - 1; i >= 0; i--) {
             if (!token_is_vowel(&ctx->word[i])) continue;
+            if (ctx->word[i].vowel_type == VH_U && i > 0 &&
+                ctx->word[i - 1].vowel_type == VH_NONE &&
+                (ctx->word[i - 1].literal == 'q' || ctx->word[i - 1].literal == 'Q')) {
+                continue;
+            }
             vn_vowel_t nv = horn_of(ctx->word[i].vowel_type);
             if (nv != VH_NONE) {
                 ctx->word[i].vowel_type = nv;

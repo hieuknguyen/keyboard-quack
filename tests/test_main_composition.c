@@ -225,6 +225,100 @@ int main(void)
     assert(telex.word_len == 3);
     puts("Test 8 (letter autorepeat) passed.");
 
+    /* Test 9: Fix 1 - Tone placement on closed diphthongs oa/oe/uy (toán, hoàng, khoác) */
+    telex_init(&telex);
+    /* Type "toans" -> "toán": t(20) o(24) a(30) n(49) s(31) */
+    const uint16_t keys9_1[] = { 20, 24, 30, 49, 31 };
+    for (size_t i = 0; i < sizeof(keys9_1) / sizeof(keys9_1[0]); i++) {
+        send_key(&telex, &inject, keys9_1[i], 1);
+        send_key(&telex, &inject, keys9_1[i], 0);
+    }
+    assert(telex.word_len == 4);
+    assert(telex.word[0].literal == 't');
+    assert(telex.word[1].vowel_type == VH_O && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_A && telex.word[2].tone == TONE_SAC);
+    assert(telex.word[3].literal == 'n');
+
+    /* Type "hoangf" -> "hoàng": h(35) o(24) a(30) n(49) g(34) f(33) */
+    telex_init(&telex);
+    const uint16_t keys9_2[] = { 35, 24, 30, 49, 34, 33 };
+    for (size_t i = 0; i < sizeof(keys9_2) / sizeof(keys9_2[0]); i++) {
+        send_key(&telex, &inject, keys9_2[i], 1);
+        send_key(&telex, &inject, keys9_2[i], 0);
+    }
+    assert(telex.word_len == 5);
+    assert(telex.word[1].vowel_type == VH_O && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_A && telex.word[2].tone == TONE_HUYEN);
+
+    /* Type "toasn" -> "toán": t(20) o(24) a(30) s(31) n(49) */
+    telex_init(&telex);
+    const uint16_t keys9_3[] = { 20, 24, 30, 31, 49 };
+    for (size_t i = 0; i < sizeof(keys9_3) / sizeof(keys9_3[0]); i++) {
+        send_key(&telex, &inject, keys9_3[i], 1);
+        send_key(&telex, &inject, keys9_3[i], 0);
+    }
+    assert(telex.word_len == 4);
+    assert(telex.word[1].vowel_type == VH_O && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_A && telex.word[2].tone == TONE_SAC);
+    assert(telex.word[3].literal == 'n');
+    puts("Test 9 (tone placement on oa/oe/uy with coda) passed.");
+
+    /* Test 10: Fix 2 - Tone placement for 'gi' + vowels (giá, già, giảm, giẻ) */
+    telex_init(&telex);
+    /* Type "gias" -> "giá": g(34) i(23) a(30) s(31) */
+    const uint16_t keys10_1[] = { 34, 23, 30, 31 };
+    for (size_t i = 0; i < sizeof(keys10_1) / sizeof(keys10_1[0]); i++) {
+        send_key(&telex, &inject, keys10_1[i], 1);
+        send_key(&telex, &inject, keys10_1[i], 0);
+    }
+    assert(telex.word_len == 3);
+    assert(telex.word[0].literal == 'g');
+    assert(telex.word[1].vowel_type == VH_I && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_A && telex.word[2].tone == TONE_SAC);
+
+    /* Type "giamr" -> "giảm": g(34) i(23) a(30) m(50) r(19) */
+    telex_init(&telex);
+    const uint16_t keys10_2[] = { 34, 23, 30, 50, 19 };
+    for (size_t i = 0; i < sizeof(keys10_2) / sizeof(keys10_2[0]); i++) {
+        send_key(&telex, &inject, keys10_2[i], 1);
+        send_key(&telex, &inject, keys10_2[i], 0);
+    }
+    assert(telex.word_len == 4);
+    assert(telex.word[1].vowel_type == VH_I && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_A && telex.word[2].tone == TONE_HOI);
+    puts("Test 10 (tone placement on gi+vowels) passed.");
+
+    /* Test 11: Fix 3 - 'quow' -> 'quơ' (not 'qươ') and 'quowr' -> 'quở' */
+    telex_init(&telex);
+    /* Type "quowr" -> "quở": q(16) u(22) o(24) w(17) r(19) */
+    const uint16_t keys11[] = { 16, 22, 24, 17, 19 };
+    for (size_t i = 0; i < sizeof(keys11) / sizeof(keys11[0]); i++) {
+        send_key(&telex, &inject, keys11[i], 1);
+        send_key(&telex, &inject, keys11[i], 0);
+    }
+    assert(telex.word_len == 3);
+    assert(telex.word[0].literal == 'q');
+    assert(telex.word[1].vowel_type == VH_U && telex.word[1].tone == TONE_NONE);
+    assert(telex.word[2].vowel_type == VH_OHR && telex.word[2].tone == TONE_HOI);
+    puts("Test 11 (quow -> quơ not qươ) passed.");
+
+    /* Test 12: Fix 4 - 'z' clears tone in Telex */
+    telex_init(&telex);
+    /* Type "toans" -> "toán", then press 'z'(44) -> "toan" */
+    const uint16_t keys12_1[] = { 20, 24, 30, 49, 31, 44 };
+    for (size_t i = 0; i < sizeof(keys12_1) / sizeof(keys12_1[0]); i++) {
+        send_key(&telex, &inject, keys12_1[i], 1);
+        send_key(&telex, &inject, keys12_1[i], 0);
+    }
+    assert(telex.word_len == 4);
+    assert(telex.word[1].tone == TONE_NONE && telex.word[2].tone == TONE_NONE);
+
+    /* Typing 'z' on word without tone keeps 'z' as literal: "zoo" -> z(44) o(24) o(24) */
+    telex_init(&telex);
+    send_key(&telex, &inject, 44, 1); send_key(&telex, &inject, 44, 0); // z
+    assert(telex.word_len == 1 && telex.word[0].literal == 'z');
+    puts("Test 12 ('z' clears tone) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }
