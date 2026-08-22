@@ -2,12 +2,16 @@
  * keyboard-quack - Vietnamese Telex Input Method for Linux
  */
 
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <time.h>
 #include <linux/input.h>
 
 #include "engine/telex.h"
@@ -58,6 +62,15 @@ static int gui_held = 0;
 static int caps_lock = 0;
 static int ctrl_shift_latched = 0;
 
+static uint64_t last_event_time_ms = 0;
+
+static uint64_t get_time_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
 static void toggle_vietnamese(telex_ctx_t *tctx)
 {
     vn_enabled = !vn_enabled;
@@ -74,15 +87,62 @@ static int is_letter_key(uint16_t code)
            (code >= 44 && code <= 50);    /* z-m */
 }
 
-static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
-                          struct input_event *ev)
+/* Check if keycode is a navigation, cursor, or window control key */
+static bool is_cursor_or_nav_key(uint16_t code)
 {
+    switch (code) {
+    case 1:   /* KEY_ESC */
+    case 15:  /* KEY_TAB */
+    case 28:  /* KEY_ENTER */
+    case 96:  /* KEY_KPENTER */
+    case 102: /* KEY_HOME */
+    case 103: /* KEY_UP */
+    case 104: /* KEY_PAGEUP */
+    case 105: /* KEY_LEFT */
+    case 106: /* KEY_RIGHT */
+    case 107: /* KEY_END */
+    case 108: /* KEY_DOWN */
+    case 109: /* KEY_PAGEDOWN */
+    case 110: /* KEY_INSERT */
+    case 111: /* KEY_DELETE */
+        return true;
+    default:
+        if (code >= 59 && code <= 68) return true; /* F1 - F10 */
+        if (code == 87 || code == 88) return true; /* F11, F12 */
+        return false;
+    }
+}
+
+static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
+                          struct input_event *ev, bool is_mouse)
+{
+    /* Handle pointer/mouse clicks: clicking switches focus/moves cursor, so reset tracking */
+    if (is_mouse) {
+        if (ev->type == EV_KEY &&
+            (ev->code == BTN_LEFT || ev->code == BTN_RIGHT ||
+             ev->code == BTN_MIDDLE || ev->code == BTN_SIDE ||
+             ev->code == BTN_EXTRA || ev->code == BTN_TOUCH) &&
+            ev->value == 1) {
+            telex_reset_tracking(tctx);
+        }
+        return;
+    }
+
     if (ev->type != EV_KEY) return;
 
     uint16_t code = ev->code;
     int val = ev->value;  /* 0=release, 1=press, 2=repeat */
     bool pressed = (val == 1);
     bool repeated = (val == 2);
+
+    /* Idle timeout check: pause > 1.5s resets unfinished composition */
+    uint64_t now = get_time_ms();
+    if (last_event_time_ms > 0 && (now - last_event_time_ms) > 1500) {
+        telex_reset_tracking(tctx);
+    }
+    if (pressed || repeated) {
+        last_event_time_ms = now;
+    }
 
     /* Always forward modifier keys (press/release only, no repeat) */
     if (code == KC_LCTRL || code == KC_RCTRL) {
@@ -112,6 +172,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     if (code == KC_LALT || code == KC_RALT) {
         if (!repeated) {
             alt_held = pressed ? 1 : 0;
+            if (pressed) telex_reset_tracking(tctx);
             inject_key(ictx, code, pressed);
         }
         return;
@@ -119,6 +180,7 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     if (code == KC_LGUI || code == KC_RGUI) {
         if (!repeated) {
             gui_held = pressed ? 1 : 0;
+            if (pressed) telex_reset_tracking(tctx);
             inject_key(ictx, code, pressed);
         }
         return;
@@ -140,6 +202,15 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     /* When Ctrl/Alt/GUI held, pass through everything and commit word */
     if (ctrl_held || alt_held || gui_held) {
         telex_reset_tracking(tctx);
+        inject_key_val(ictx, code, val);
+        return;
+    }
+
+    /* Navigation / Cursor movement keys (Enter, Esc, Tab, Arrows, Home, End, Delete, F-keys) */
+    if (is_cursor_or_nav_key(code)) {
+        if (pressed || repeated) {
+            telex_reset_tracking(tctx);
+        }
         inject_key_val(ictx, code, val);
         return;
     }
@@ -260,14 +331,15 @@ int main(int argc, char *argv[])
 
     while (running) {
         struct input_event ev;
-        int dev_idx;
+        int dev_idx = -1;
 
         if (capture_read(&cap, &ev, &dev_idx) < 0) {
             if (!running) break;
             continue;
         }
 
-        process_event(&tctx, &inj, &ev);
+        bool is_mouse = capture_is_mouse(&cap, dev_idx);
+        process_event(&tctx, &inj, &ev, is_mouse);
     }
 
     fprintf(stderr, "\n[quack] Shutting down...\n");

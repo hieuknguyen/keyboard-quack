@@ -41,6 +41,25 @@ static bool is_keyboard(int fd)
     return true;
 }
 
+static bool is_pointer_device(int fd)
+{
+    unsigned long key_bits[KEY_MAX / (sizeof(unsigned long) * 8) + 1];
+    memset(key_bits, 0, sizeof(key_bits));
+    if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) < 0)
+        return false;
+
+    int btn_keys[] = { BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA, BTN_TOUCH };
+    for (size_t i = 0; i < sizeof(btn_keys) / sizeof(btn_keys[0]); i++) {
+        int key = btn_keys[i];
+        int idx = key / (sizeof(unsigned long) * 8);
+        int bit = key % (sizeof(unsigned long) * 8);
+        if (key_bits[idx] & (1UL << bit)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int capture_init(capture_ctx_t *ctx)
 {
     memset(ctx, 0, sizeof(*ctx));
@@ -61,7 +80,7 @@ int capture_init(capture_ctx_t *ctx)
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (ctx->count >= MAX_KEYBOARDS) break;
+        if (ctx->count >= MAX_DEVICES) break;
 
         if (strncmp(entry->d_name, EVENT_PREFIX, strlen(EVENT_PREFIX)) != 0)
             continue;
@@ -72,11 +91,6 @@ int capture_init(capture_ctx_t *ctx)
         int fd = open(path, O_RDONLY | O_NONBLOCK);
         if (fd < 0) continue;
 
-        if (!is_keyboard(fd)) {
-            close(fd);
-            continue;
-        }
-
         /* Get device name */
         char name[256] = "Unknown";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
@@ -85,11 +99,20 @@ int capture_init(capture_ctx_t *ctx)
             continue;
         }
 
-        kbd_device_t *kbd = &ctx->keyboards[ctx->count];
-        kbd->fd = fd;
-        kbd->grabbed = false;
-        strncpy(kbd->path, path, sizeof(kbd->path) - 1);
-        strncpy(kbd->name, name, sizeof(kbd->name) - 1);
+        bool is_kbd = is_keyboard(fd);
+        bool is_mouse = is_pointer_device(fd);
+
+        if (!is_kbd && !is_mouse) {
+            close(fd);
+            continue;
+        }
+
+        capture_device_t *dev = &ctx->devices[ctx->count];
+        dev->fd = fd;
+        dev->grabbed = false;
+        dev->is_mouse = is_mouse;
+        strncpy(dev->path, path, sizeof(dev->path) - 1);
+        strncpy(dev->name, name, sizeof(dev->name) - 1);
 
         /* Add to epoll */
         struct epoll_event ev;
@@ -97,19 +120,28 @@ int capture_init(capture_ctx_t *ctx)
         ev.data.fd = fd;
         epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, fd, &ev);
 
-        fprintf(stderr, "[capture] Found keyboard: %s (%s)\n", name, path);
+        if (is_kbd) {
+            fprintf(stderr, "[capture] Found keyboard: %s (%s)\n", name, path);
+        } else {
+            fprintf(stderr, "[capture] Monitoring pointer for focus reset: %s (%s)\n", name, path);
+        }
         ctx->count++;
     }
 
     closedir(dir);
 
-    if (ctx->count == 0) {
+    int kbd_count = 0;
+    for (int i = 0; i < ctx->count; i++) {
+        if (!ctx->devices[i].is_mouse) kbd_count++;
+    }
+
+    if (kbd_count == 0) {
         fprintf(stderr, "[capture] No keyboards found\n");
         close(ctx->epoll_fd);
         return -1;
     }
 
-    fprintf(stderr, "[capture] Found %d keyboard(s)\n", ctx->count);
+    fprintf(stderr, "[capture] Initialized with %d device(s) (%d keyboard(s))\n", ctx->count, kbd_count);
     return 0;
 }
 
@@ -117,13 +149,17 @@ int capture_grab(capture_ctx_t *ctx)
 {
     int grabbed = 0;
     for (int i = 0; i < ctx->count; i++) {
-        if (ioctl(ctx->keyboards[i].fd, EVIOCGRAB, 1) == 0) {
-            ctx->keyboards[i].grabbed = true;
+        if (ctx->devices[i].is_mouse) {
+            /* Do not grab pointer devices so OS receives normal mouse clicks/movements */
+            continue;
+        }
+        if (ioctl(ctx->devices[i].fd, EVIOCGRAB, 1) == 0) {
+            ctx->devices[i].grabbed = true;
             grabbed++;
-            fprintf(stderr, "[capture] Grabbed: %s\n", ctx->keyboards[i].name);
+            fprintf(stderr, "[capture] Grabbed: %s\n", ctx->devices[i].name);
         } else {
             fprintf(stderr, "[capture] Failed to grab %s: %s\n",
-                    ctx->keyboards[i].name, strerror(errno));
+                    ctx->devices[i].name, strerror(errno));
         }
     }
     return (grabbed > 0) ? 0 : -1;
@@ -132,10 +168,10 @@ int capture_grab(capture_ctx_t *ctx)
 int capture_ungrab(capture_ctx_t *ctx)
 {
     for (int i = 0; i < ctx->count; i++) {
-        if (ctx->keyboards[i].grabbed) {
-            ioctl(ctx->keyboards[i].fd, EVIOCGRAB, 0);
-            ctx->keyboards[i].grabbed = false;
-            fprintf(stderr, "[capture] Ungrabbed: %s\n", ctx->keyboards[i].name);
+        if (ctx->devices[i].grabbed) {
+            ioctl(ctx->devices[i].fd, EVIOCGRAB, 0);
+            ctx->devices[i].grabbed = false;
+            fprintf(stderr, "[capture] Ungrabbed: %s\n", ctx->devices[i].name);
         }
     }
     return 0;
@@ -161,11 +197,11 @@ int capture_read(capture_ctx_t *ctx, struct input_event *ev, int *dev_idx)
         return -1;
     }
 
-    /* Find which keyboard */
+    /* Find which device */
     if (dev_idx) {
         *dev_idx = -1;
         for (int i = 0; i < ctx->count; i++) {
-            if (ctx->keyboards[i].fd == fd) {
+            if (ctx->devices[i].fd == fd) {
                 *dev_idx = i;
                 break;
             }
@@ -179,9 +215,9 @@ void capture_cleanup(capture_ctx_t *ctx)
 {
     capture_ungrab(ctx);
     for (int i = 0; i < ctx->count; i++) {
-        if (ctx->keyboards[i].fd >= 0) {
-            close(ctx->keyboards[i].fd);
-            ctx->keyboards[i].fd = -1;
+        if (ctx->devices[i].fd >= 0) {
+            close(ctx->devices[i].fd);
+            ctx->devices[i].fd = -1;
         }
     }
     if (ctx->epoll_fd >= 0) {

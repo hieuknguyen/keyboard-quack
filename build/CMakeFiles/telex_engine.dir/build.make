@@ -72,7 +72,7 @@ include CMakeFiles/telex_engine.dir/flags.make
 telex_engine_autogen/timestamp: /usr/lib/qt6/libexec/moc
 telex_engine_autogen/timestamp: CMakeFiles/telex_engine.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/hieuknguyen/keyboard-quack/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Automatic MOC for target telex_engine"
-	/usr/bin/cmake -E cmake_autogen /home/hieuknguyen/keyboard-quack/build/CMakeFiles/telex_engine_autogen.dir/AutogenInfo.json Release
+	/usr/bin/cmake -E cmake_autogen /home/hieuknguyen/keyboard-quack/build/CMakeFiles/telex_engine_autogen.dir/AutogenInfo.json ""
 	/usr/bin/cmake -E touch /home/hieuknguyen/keyboard-quack/build/telex_engine_autogen/timestamp
 
 CMakeFiles/telex_engine.dir/telex_engine_autogen/mocs_compilation.cpp.o: CMakeFiles/telex_engine.dir/flags.make

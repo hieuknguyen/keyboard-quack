@@ -1,3 +1,0 @@
-/usr/local/bin/quack
-/usr/local/bin/quack-config
-/usr/local/etc/keyboard-quack/default.toml

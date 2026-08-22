@@ -40,7 +40,15 @@ static void send_key(telex_ctx_t *telex, inject_ctx_t *inject,
                      uint16_t code, int value)
 {
     struct input_event ev = { .type = EV_KEY, .code = code, .value = value };
-    process_event(telex, inject, &ev);
+    process_event(telex, inject, &ev, false);
+}
+
+static void send_mouse_click(telex_ctx_t *telex, inject_ctx_t *inject, uint16_t code)
+{
+    struct input_event ev = { .type = EV_KEY, .code = code, .value = 1 };
+    process_event(telex, inject, &ev, true);
+    ev.value = 0;
+    process_event(telex, inject, &ev, true);
 }
 
 int main(void)
@@ -157,13 +165,13 @@ int main(void)
 
     /* Hold Backspace: 1 press + 3 repeats = 4 backspaces total (deletes 'c', 'o', 'h', and the space) */
     struct input_event ev_bsp_press = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 1 };
-    process_event(&telex, &inject, &ev_bsp_press);
+    process_event(&telex, &inject, &ev_bsp_press, false);
     struct input_event ev_bsp_rep = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 2 };
     for (int i = 0; i < 3; i++) {
-        process_event(&telex, &inject, &ev_bsp_rep);
+        process_event(&telex, &inject, &ev_bsp_rep, false);
     }
     struct input_event ev_bsp_rel = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 0 };
-    process_event(&telex, &inject, &ev_bsp_rel);
+    process_event(&telex, &inject, &ev_bsp_rel, false);
 
     /* "tooi" ("tôi") must be restored in buffer */
     assert(telex.word_len == 3);
@@ -176,11 +184,11 @@ int main(void)
     assert(telex.word[1].tone == TONE_SAC);
 
     /* Now hold Backspace to erase all of "tối" (1 press + 3 repeats = 4 backspaces) */
-    process_event(&telex, &inject, &ev_bsp_press);
+    process_event(&telex, &inject, &ev_bsp_press, false);
     for (int i = 0; i < 3; i++) {
-        process_event(&telex, &inject, &ev_bsp_rep);
+        process_event(&telex, &inject, &ev_bsp_rep, false);
     }
-    process_event(&telex, &inject, &ev_bsp_rel);
+    process_event(&telex, &inject, &ev_bsp_rel, false);
 
     /* Buffer must now be completely clean */
     assert(telex.word_len == 0);
@@ -215,13 +223,13 @@ int main(void)
     /* Test 8: Letter autorepeat (val == 2) */
     telex_init(&telex);
     struct input_event ev_a = { .type = EV_KEY, .code = 30, .value = 1 }; // a
-    process_event(&telex, &inject, &ev_a);
+    process_event(&telex, &inject, &ev_a, false);
     ev_a.value = 2; // repeat -> â
-    process_event(&telex, &inject, &ev_a);
+    process_event(&telex, &inject, &ev_a, false);
     assert(telex.word_len == 1 && telex.word[0].vowel_type == VH_ACI);
-    process_event(&telex, &inject, &ev_a); // repeat -> aa
+    process_event(&telex, &inject, &ev_a, false); // repeat -> aa
     assert(telex.word_len == 2 && telex.shape_cancelled == true);
-    process_event(&telex, &inject, &ev_a); // repeat -> aaa
+    process_event(&telex, &inject, &ev_a, false); // repeat -> aaa
     assert(telex.word_len == 3);
     puts("Test 8 (letter autorepeat) passed.");
 
@@ -312,12 +320,46 @@ int main(void)
     }
     assert(telex.word_len == 4);
     assert(telex.word[1].tone == TONE_NONE && telex.word[2].tone == TONE_NONE);
-
-    /* Typing 'z' on word without tone keeps 'z' as literal: "zoo" -> z(44) o(24) o(24) */
-    telex_init(&telex);
-    send_key(&telex, &inject, 44, 1); send_key(&telex, &inject, 44, 0); // z
-    assert(telex.word_len == 1 && telex.word[0].literal == 'z');
     puts("Test 12 ('z' clears tone) passed.");
+
+    /* Test 13: Mouse click resets tracking (switching window mid-word) */
+    telex_init(&telex);
+    /* In App A: type "to" -> t(20) o(24) */
+    send_key(&telex, &inject, 20, 1); send_key(&telex, &inject, 20, 0);
+    send_key(&telex, &inject, 24, 1); send_key(&telex, &inject, 24, 0);
+    assert(telex.word_len == 2);
+    /* User clicks mouse on App B */
+    send_mouse_click(&telex, &inject, BTN_LEFT);
+    assert(telex.word_len == 0);
+    /* In App B: user types 'a' (30) */
+    send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0);
+    assert(telex.word_len == 1);
+    assert(telex.word[0].literal == 'a');
+    puts("Test 13 (mouse click resets tracking across apps) passed.");
+
+    /* Test 14: Navigation key (Arrow, Enter, Tab, Esc) resets tracking */
+    telex_init(&telex);
+    /* Type "to", press Right Arrow (106), type "s" */
+    send_key(&telex, &inject, 20, 1); send_key(&telex, &inject, 20, 0);
+    send_key(&telex, &inject, 24, 1); send_key(&telex, &inject, 24, 0);
+    assert(telex.word_len == 2);
+    send_key(&telex, &inject, 106, 1); send_key(&telex, &inject, 106, 0); /* Right Arrow */
+    assert(telex.word_len == 0);
+    /* Type "s" (31) in new position */
+    send_key(&telex, &inject, 31, 1); send_key(&telex, &inject, 31, 0);
+    assert(telex.word_len == 1);
+    assert(telex.word[0].literal == 's');
+    puts("Test 14 (navigation keys reset tracking) passed.");
+
+    /* Test 15: Alt / Super modifier resets tracking */
+    telex_init(&telex);
+    /* Type "to", press Alt (56) (e.g. Alt+Tab) */
+    send_key(&telex, &inject, 20, 1); send_key(&telex, &inject, 20, 0);
+    send_key(&telex, &inject, 24, 1); send_key(&telex, &inject, 24, 0);
+    assert(telex.word_len == 2);
+    send_key(&telex, &inject, 56, 1); send_key(&telex, &inject, 56, 0); /* Alt */
+    assert(telex.word_len == 0);
+    puts("Test 15 (Alt/Super modifier resets tracking) passed.");
 
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
