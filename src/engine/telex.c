@@ -411,6 +411,7 @@ void telex_commit_word(telex_ctx_t *ctx)
 static uint32_t token_cp(const telex_token_t *t);
 static telex_result_t retype_word(telex_ctx_t *ctx);
 static int choose_tone_vowel(const telex_ctx_t *ctx);
+static bool tracking_is_consistent(const telex_ctx_t *ctx);
 
 telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
 {
@@ -418,24 +419,12 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
     result_init(&r);
 
     /* Never build a screen diff from impossible or out-of-sync state. */
-    if (ctx->word_len < 0 || ctx->word_len > TELEX_MAX_WORD ||
-        ctx->rendered_len < 0 || ctx->rendered_len > TELEX_MAX_WORD) {
+    if (!tracking_is_consistent(ctx)) {
         telex_reset_tracking(ctx);
         return r;
     }
 
     if (ctx->word_len > 0) {
-        if (ctx->rendered_len != ctx->word_len) {
-            telex_reset_tracking(ctx);
-            return r;
-        }
-        for (int i = 0; i < ctx->word_len; i++) {
-            if (ctx->rendered_cps[i] != token_cp(&ctx->word[i])) {
-                telex_reset_tracking(ctx);
-                return r;
-            }
-        }
-
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
@@ -515,6 +504,26 @@ static uint32_t token_cp(const telex_token_t *t)
         return t->is_upper ? VN_DD : VN_dd;
     }
     return t->literal;
+}
+
+static bool tracking_is_consistent(const telex_ctx_t *ctx)
+{
+    if (ctx->word_len < 0 || ctx->word_len > TELEX_MAX_WORD ||
+        ctx->rendered_len != ctx->word_len ||
+        ctx->boundary_count < 0 || ctx->boundary_count > TELEX_MAX_BOUNDARIES) {
+        return false;
+    }
+
+    for (int i = 0; i < ctx->word_len; i++) {
+        if (ctx->rendered_cps[i] != token_cp(&ctx->word[i])) return false;
+    }
+    for (int i = 0; i < ctx->boundary_count; i++) {
+        if (ctx->boundary_lens[i] < 0 ||
+            ctx->boundary_lens[i] > TELEX_MAX_WORD) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static telex_result_t retype_word(telex_ctx_t *ctx)
@@ -619,6 +628,9 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     telex_result_t r;
     result_init(&r);
     if (!pressed) return r;
+    if (!tracking_is_consistent(ctx)) {
+        telex_reset_tracking(ctx);
+    }
     if (!ctx->enabled) {
         r.action = ACT_OUTPUT;
         return r;

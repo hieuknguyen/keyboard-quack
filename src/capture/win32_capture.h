@@ -34,6 +34,7 @@ typedef struct {
     bool               uia_selection_latched;
     bool               foreground_identity_initialized;
     bool               backspace_keydown_swallowed;
+    bool               letter_keydown_swallowed[26];
     volatile int       running;
     int                vn_enabled;
     int                ctrl_shift_latched;

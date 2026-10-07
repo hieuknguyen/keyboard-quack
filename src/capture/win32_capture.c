@@ -783,6 +783,20 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     bool is_up   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
     DWORD vk = p->vkCode;
 
+    if (vk >= 'A' && vk <= 'Z') {
+        int letter_index = (int)(vk - 'A');
+        if (is_up) {
+            if (g_capture_ctx->letter_keydown_swallowed[letter_index]) {
+                g_capture_ctx->letter_keydown_swallowed[letter_index] = false;
+                return 1;
+            }
+            return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
+        }
+        if (is_down) {
+            g_capture_ctx->letter_keydown_swallowed[letter_index] = false;
+        }
+    }
+
     bool ctrl_down  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
     bool shift_down = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
     bool alt_down   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
@@ -912,6 +926,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
         switch (result.action) {
         case ACT_NONE:
+            g_capture_ctx->letter_keydown_swallowed[vk - 'A'] = true;
             return 1; /* Swallow */
 
         case ACT_OUTPUT:
@@ -924,6 +939,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                                                   result.output_len),
                               inject_result == 0);
             }
+            g_capture_ctx->letter_keydown_swallowed[vk - 'A'] = true;
             return 1; /* Swallow original raw key */
 
         case ACT_BKSP_OUTPUT:
@@ -942,15 +958,13 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                                   result.backspace_count,
                               inject_result == 0);
             }
+            g_capture_ctx->letter_keydown_swallowed[vk - 'A'] = true;
             return 1; /* Swallow original raw key */
 
         default:
             uia_note_edit(g_capture_ctx, 1, true);
             break;
         }
-    } else if (is_up) {
-        /* Swallow key up for processed letter keys to avoid phantom releases */
-        return 1;
     }
 
     return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
