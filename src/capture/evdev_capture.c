@@ -1,3 +1,5 @@
+#ifdef __linux__
+
 #include "evdev_capture.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -231,3 +233,5 @@ int capture_get_poll_fd(capture_ctx_t *ctx)
 {
     return ctx->epoll_fd;
 }
+
+#endif /* __linux__ */

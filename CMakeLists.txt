@@ -10,54 +10,79 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 COMPONENTS Widgets QUIET)
 if(NOT Qt6_FOUND)
-    find_package(Qt5 COMPONENTS Widgets REQUIRED)
+    find_package(Qt5 COMPONENTS Widgets QUIET)
 endif()
 
 set(ENGINE_SOURCES
     src/engine/telex.c
 )
 
-set(CAPTURE_SOURCES
-    src/capture/evdev_capture.c
-)
-
-set(INJECT_SOURCES
-    src/inject/uinput_inject.c
-)
-
 set(CONFIG_SOURCES
     src/config/config.c
+    src/platform/platform.c
 )
+
+if(WIN32)
+    set(CAPTURE_SOURCES
+        src/capture/win32_capture.c
+        src/capture/win32_uia.c
+        src/windows/win_update.c
+    )
+    set(INJECT_SOURCES
+        src/inject/win32_inject.c
+    )
+else()
+    set(CAPTURE_SOURCES
+        src/capture/evdev_capture.c
+    )
+    set(INJECT_SOURCES
+        src/inject/uinput_inject.c
+    )
+endif()
 
 add_library(telex_engine STATIC ${ENGINE_SOURCES})
 target_include_directories(telex_engine PUBLIC src/engine)
 
 add_library(capture STATIC ${CAPTURE_SOURCES})
-target_include_directories(capture PUBLIC src/capture)
+target_include_directories(capture PUBLIC src/capture src/engine src/inject src/platform)
 
 add_library(inject STATIC ${INJECT_SOURCES})
 target_include_directories(inject PUBLIC src/inject)
 
 add_library(config STATIC ${CONFIG_SOURCES})
-target_include_directories(config PUBLIC src/config)
+target_include_directories(config PUBLIC src/config src/platform)
 
-add_executable(quack
-    src/main.c
-)
-target_link_libraries(quack PRIVATE telex_engine capture inject config m dl)
-
-add_executable(quack-config
-    src/ui/main_window.cpp
-)
-if(Qt6_FOUND)
-    target_link_libraries(quack-config PRIVATE Qt6::Widgets config)
+if(WIN32)
+    add_executable(quack WIN32
+        src/main.c
+    )
+    target_link_libraries(quack PRIVATE telex_engine capture inject config user32 shell32 advapi32 uiautomationcore ole32 oleaut32 uuid winhttp bcrypt)
 else()
-    target_link_libraries(quack-config PRIVATE Qt5::Widgets config)
+    add_executable(quack
+        src/main.c
+    )
+    target_link_libraries(quack PRIVATE telex_engine capture inject config m dl)
 endif()
 
-install(TARGETS quack quack-config
+if(TARGET Qt6::Widgets OR TARGET Qt5::Widgets)
+    add_executable(quack-config
+        src/ui/main_window.cpp
+    )
+    if(TARGET Qt6::Widgets)
+        target_link_libraries(quack-config PRIVATE Qt6::Widgets config)
+    else()
+        target_link_libraries(quack-config PRIVATE Qt5::Widgets config)
+    endif()
+
+    install(TARGETS quack-config RUNTIME DESTINATION bin)
+endif()
+
+install(TARGETS quack
     RUNTIME DESTINATION bin
 )
-install(FILES config/default.toml
-    DESTINATION etc/keyboard-quack
-)
+
+if(UNIX)
+    install(FILES config/default.toml
+        DESTINATION etc/keyboard-quack
+    )
+endif()

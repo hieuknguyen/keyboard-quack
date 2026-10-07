@@ -1,6 +1,8 @@
 #ifndef UINPUT_INJECT_H
 #define UINPUT_INJECT_H
 
+#ifdef __linux__
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -69,5 +71,7 @@ int inject_bksp_retype(inject_ctx_t *ctx, int bksp_count,
  * Cleanup.
  */
 void inject_cleanup(inject_ctx_t *ctx);
+
+#endif /* __linux__ */
 
 #endif /* UINPUT_INJECT_H */

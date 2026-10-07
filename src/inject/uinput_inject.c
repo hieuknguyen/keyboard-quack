@@ -1,3 +1,5 @@
+#ifdef __linux__
+
 #define _DEFAULT_SOURCE
 #include "uinput_inject.h"
 #include "../engine/unicode_map.h"
@@ -472,3 +474,5 @@ void inject_cleanup(inject_ctx_t *ctx)
     if (ctx->x11_lib) dlclose(ctx->x11_lib);
     if (ctx->xtst_lib) dlclose(ctx->xtst_lib);
 }
+
+#endif /* __linux__ */

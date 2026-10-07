@@ -1,0 +1,62 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up MinGW UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          location: C:\msys64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Ensure the tag matches the app version
+        shell: pwsh
+        run: |
+          $header = Get-Content src/windows/installer_common.h -Raw
+          if ($header -notmatch '#define QUACK_VERSION_A "([^"]+)"') {
+            throw "Could not read QUACK_VERSION_A."
+          }
+          $versionA = $Matches[1]
+          if ($header -notmatch '#define QUACK_VERSION_W L"([^"]+)"') {
+            throw "Could not read QUACK_VERSION_W."
+          }
+          $versionW = $Matches[1]
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(keyboard-quack VERSION ([0-9.]+)') {
+            throw "Could not read the CMake project version."
+          }
+          $cmakeVersion = $Matches[1]
+          if ($versionA -ne $versionW -or $versionA -ne $cmakeVersion) {
+            throw "The app and CMake versions must match."
+          }
+          $expectedTag = "v$versionA"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match $expectedTag."
+          }
+
+      - name: Build setup
+        shell: pwsh
+        run: |
+          cmd /c build-windows-installer.bat
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create $env:GITHUB_REF_NAME build-windows/keyboard-quack-setup.exe --title $env:GITHUB_REF_NAME --generate-notes

@@ -1,0 +1,5 @@
+#include <windows.h>
+#include "installer_common.h"
+
+IDR_QUACK_INSTALLED_EXE RCDATA "build-windows/installer-payload/quack.exe"
+IDR_QUACK_UNINSTALLER_EXE RCDATA "build-windows/installer-payload/uninstall.exe"

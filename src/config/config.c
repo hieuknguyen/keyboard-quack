@@ -1,11 +1,9 @@
 #include "config.h"
+#include "../platform/platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <errno.h>
-#include <pwd.h>
-#include <unistd.h>
 
 void config_defaults(quack_config_t *cfg)
 {
@@ -19,28 +17,19 @@ void config_defaults(quack_config_t *cfg)
     cfg->debug = false;
 }
 
-static void ensure_dir(const char *path)
-{
-    char tmp[1024];
-    snprintf(tmp, sizeof(tmp), "%s", path);
-    char *p = strrchr(tmp, '/');
-    if (p) {
-        *p = '\0';
-        mkdir(tmp, 0755);
-    }
-}
-
 const char *config_get_default_path(void)
 {
     static char path[CONFIG_PATH_MAX];
-    const char *home = getenv("HOME");
-    if (!home) {
-        struct passwd *pw = getpwuid(getuid());
-        if (pw) home = pw->pw_dir;
-    }
-    if (!home) home = "/tmp";
+    char config_dir[CONFIG_PATH_MAX];
+    platform_get_config_dir(config_dir, sizeof(config_dir));
 
-    snprintf(path, sizeof(path), "%s/.config/keyboard-quack/config.toml", home);
+#if defined(_WIN32) || defined(_WIN64)
+    snprintf(path, sizeof(path), "%.*s\\config.toml",
+             (int)(sizeof(path) - sizeof("\\config.toml")), config_dir);
+#else
+    snprintf(path, sizeof(path), "%s/config.toml", config_dir);
+#endif
+
     return path;
 }
 
@@ -49,8 +38,13 @@ int config_load(quack_config_t *cfg, const char *path)
 {
     config_defaults(cfg);
 
-    if (!path) path = config_get_default_path();
-    strncpy(cfg->config_path, path, CONFIG_PATH_MAX - 1);
+    if (!path || path[0] == '\0') path = config_get_default_path();
+    size_t path_len = strlen(path);
+    if (path_len >= sizeof(cfg->config_path)) {
+        path_len = sizeof(cfg->config_path) - 1;
+    }
+    memcpy(cfg->config_path, path, path_len);
+    cfg->config_path[path_len] = '\0';
 
     FILE *f = fopen(path, "r");
     if (!f) {
@@ -74,9 +68,9 @@ int config_load(quack_config_t *cfg, const char *path)
 
             /* Trim value */
             char *vstart = val;
-            while (*vstart == ' ' || *vstart == '\t') vstart++;
+            while (*vstart == ' ' || *vstart == '\t' || *vstart == '"') vstart++;
             end = vstart + strlen(vstart) - 1;
-            while (end > vstart && (*end == ' ' || *end == '\t' || *end == '\r')) *end-- = '\0';
+            while (end > vstart && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '"')) *end-- = '\0';
 
             /* Parse values */
             if (strcmp(key, "input_method") == 0) {
@@ -107,10 +101,19 @@ int config_load(quack_config_t *cfg, const char *path)
 
 int config_save(const quack_config_t *cfg, const char *path)
 {
-    if (!path) path = cfg->config_path;
+    if (!path || path[0] == '\0') path = cfg->config_path;
     if (!path || path[0] == '\0') path = config_get_default_path();
 
-    ensure_dir(path);
+    /* Extract directory part and ensure it exists */
+    char dir[CONFIG_PATH_MAX];
+    strncpy(dir, path, sizeof(dir) - 1);
+    dir[sizeof(dir) - 1] = '\0';
+    char *last_sep = strrchr(dir, '/');
+    if (!last_sep) last_sep = strrchr(dir, '\\');
+    if (last_sep) {
+        *last_sep = '\0';
+        platform_mkdir(dir);
+    }
 
     FILE *f = fopen(path, "w");
     if (!f) {

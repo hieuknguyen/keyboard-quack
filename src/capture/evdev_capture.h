@@ -1,6 +1,8 @@
 #ifndef EVDEV_CAPTURE_H
 #define EVDEV_CAPTURE_H
 
+#ifdef __linux__
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <linux/input.h>
@@ -61,5 +63,6 @@ static inline bool capture_is_mouse(const capture_ctx_t *ctx, int dev_idx)
     }
     return false;
 }
+#endif /* __linux__ */
 
 #endif /* EVDEV_CAPTURE_H */
