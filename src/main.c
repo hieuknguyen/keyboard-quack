@@ -281,9 +281,14 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
                 telex_commit_word(tctx);
         } else if (code == KC_BACKSPACE) {
             if (pressed || repeated) {
-                telex_handle_backspace(tctx);
-                inject_key(ictx, KC_BACKSPACE, true);
-                inject_key(ictx, KC_BACKSPACE, false);
+                telex_result_t result = telex_handle_backspace(tctx);
+                if (result.action == ACT_BKSP_OUTPUT) {
+                    inject_bksp_retype(ictx, result.backspace_count,
+                                       result.output, result.output_len);
+                } else {
+                    inject_key(ictx, KC_BACKSPACE, true);
+                    inject_key(ictx, KC_BACKSPACE, false);
+                }
             }
             return;
         } else if (pressed || repeated) {
@@ -350,7 +355,7 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
-    fprintf(stderr, "=== keyboard-quack v1.0.0 ===\n");
+    fprintf(stderr, "=== keyboard-quack v1.0.1 ===\n");
     fprintf(stderr, "Vietnamese Telex Input Method\n");
     fprintf(stderr, "[quack] Detected OS: %s\n\n", platform_get_os_name());
 

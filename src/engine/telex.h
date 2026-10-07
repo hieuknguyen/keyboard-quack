@@ -90,7 +90,7 @@ void telex_commit_word(telex_ctx_t *ctx);
 /*
  * Handle Backspace key on the composition buffer.
  */
-void telex_handle_backspace(telex_ctx_t *ctx);
+telex_result_t telex_handle_backspace(telex_ctx_t *ctx);
 
 void telex_undo_last(telex_ctx_t *ctx);
 

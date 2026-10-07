@@ -778,9 +778,34 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     /* Backspace key */
     if (vk == VK_BACK) {
         if (is_down) {
-            telex_handle_backspace(g_capture_ctx->tctx);
+            telex_result_t result = telex_handle_backspace(g_capture_ctx->tctx);
+            if (result.action == ACT_BKSP_OUTPUT) {
+                int inject_result = win32_inject_bksp_retype(
+                    g_capture_ctx->ictx, result.backspace_count,
+                    result.output, result.output_len);
+                int caret_delta = output_utf16_length(result.output,
+                                                     result.output_len) -
+                                  result.backspace_count;
+                uia_note_edit(g_capture_ctx, caret_delta,
+                              inject_result == 0);
+                if (inject_result != 0) {
+                    g_capture_ctx->backspace_keydown_swallowed = false;
+                    return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
+                }
+                g_capture_ctx->backspace_keydown_swallowed = true;
+                return 1; /* Swallow; replacement includes the Backspace edit. */
+            }
+
+            g_capture_ctx->backspace_keydown_swallowed = false;
             uia_note_edit(g_capture_ctx, -1, true);
+            return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
         }
+
+        if (is_up && g_capture_ctx->backspace_keydown_swallowed) {
+            g_capture_ctx->backspace_keydown_swallowed = false;
+            return 1;
+        }
+
         return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
     }
 

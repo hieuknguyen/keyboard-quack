@@ -409,22 +409,41 @@ void telex_commit_word(telex_ctx_t *ctx)
 }
 
 static uint32_t token_cp(const telex_token_t *t);
+static telex_result_t retype_word(telex_ctx_t *ctx);
+static int choose_tone_vowel(const telex_ctx_t *ctx);
 
-void telex_handle_backspace(telex_ctx_t *ctx)
+telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
 {
+    telex_result_t r;
+    result_init(&r);
+
     if (ctx->word_len > 0) {
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
-        ctx->rendered_len = ctx->word_len;
-        for (int i = 0; i < ctx->word_len; i++) {
-            ctx->rendered_cps[i] = token_cp(&ctx->word[i]);
-        }
         ctx->undo_valid = false;
         if (ctx->word_len == 0 || (ctx->shape_cancelled && ctx->word_len < ctx->shape_cancelled_len)) {
             ctx->shape_cancelled = false;
             ctx->shape_cancelled_len = 0;
         }
+
+        /* The tone position can change when deleting a vowel or coda. */
+        int tone = TONE_NONE;
+        for (int i = 0; i < ctx->word_len; i++) {
+            if (ctx->word[i].tone != TONE_NONE) {
+                tone = ctx->word[i].tone;
+                ctx->word[i].tone = TONE_NONE;
+            }
+        }
+        if (tone != TONE_NONE) {
+            int target = choose_tone_vowel(ctx);
+            if (target >= 0) {
+                ctx->word[target].tone = tone;
+            }
+        }
+
+        /* Return a screen diff so callers can keep rendered text in sync. */
+        return retype_word(ctx);
     } else if (ctx->word_len == 0 && ctx->boundary_count > 0) {
         /* Backspacing across the delimiter: restore the previous word into active buffer */
         int n = --ctx->boundary_count;
@@ -439,6 +458,9 @@ void telex_handle_backspace(telex_ctx_t *ctx)
         ctx->undo_valid = false;
         ctx->deleted_token_valid = false;
     }
+
+    /* No tracked text: let the target application handle Backspace normally. */
+    return r;
 }
 
 void telex_undo_last(telex_ctx_t *ctx)

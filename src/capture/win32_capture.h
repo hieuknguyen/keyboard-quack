@@ -33,6 +33,7 @@ typedef struct {
     bool               uia_caret_valid;
     bool               uia_selection_latched;
     bool               foreground_identity_initialized;
+    bool               backspace_keydown_swallowed;
     volatile int       running;
     int                vn_enabled;
     int                ctrl_shift_latched;
