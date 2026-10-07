@@ -417,7 +417,25 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
     telex_result_t r;
     result_init(&r);
 
+    /* Never build a screen diff from impossible or out-of-sync state. */
+    if (ctx->word_len < 0 || ctx->word_len > TELEX_MAX_WORD ||
+        ctx->rendered_len < 0 || ctx->rendered_len > TELEX_MAX_WORD) {
+        telex_reset_tracking(ctx);
+        return r;
+    }
+
     if (ctx->word_len > 0) {
+        if (ctx->rendered_len != ctx->word_len) {
+            telex_reset_tracking(ctx);
+            return r;
+        }
+        for (int i = 0; i < ctx->word_len; i++) {
+            if (ctx->rendered_cps[i] != token_cp(&ctx->word[i])) {
+                telex_reset_tracking(ctx);
+                return r;
+            }
+        }
+
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
@@ -446,7 +464,16 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         return retype_word(ctx);
     } else if (ctx->word_len == 0 && ctx->boundary_count > 0) {
         /* Backspacing across the delimiter: restore the previous word into active buffer */
+        if (ctx->boundary_count > TELEX_MAX_BOUNDARIES) {
+            telex_reset_tracking(ctx);
+            return r;
+        }
         int n = --ctx->boundary_count;
+        if (ctx->boundary_lens[n] <= 0 ||
+            ctx->boundary_lens[n] > TELEX_MAX_WORD) {
+            telex_reset_tracking(ctx);
+            return r;
+        }
         memcpy(ctx->word, ctx->boundary_words[n], sizeof(ctx->word[0]) * ctx->boundary_lens[n]);
         ctx->word_len = ctx->boundary_lens[n];
         ctx->rendered_len = ctx->word_len;

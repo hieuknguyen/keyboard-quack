@@ -11,6 +11,7 @@
 #include "win32_uia.h"
 
 #define UIA_POLL_INTERVAL_MS 25
+#define UIA_TEXT_STABLE_MS 75
 
 static void release_range(IUIAutomationTextRange **range)
 {
@@ -62,6 +63,7 @@ static void query_focused_text(IUIAutomation *automation,
     IUIAutomationTextRange *prefix = NULL;
     IUIAutomationTextRangeArray *selections = NULL;
     IUIAutomationTextRange *selection = NULL;
+    BSTR text_before_caret = NULL;
     BOOL caret_active = FALSE;
     int selection_count = 0;
     int moved = 0;
@@ -149,7 +151,29 @@ static void query_focused_text(IUIAutomation *automation,
     snapshot->element_runtime_id = runtime_id_hash;
     snapshot->caret_offset = (LONG)moved;
 
+    /* Keep a bounded copy of the text immediately before the caret. */
+    int text_moved = 0;
+    if (SUCCEEDED(IUIAutomationTextRange_MoveEndpointByUnit(
+            prefix, TextPatternRangeEndpoint_Start, TextUnit_Character,
+            -(WIN32_UIA_TEXT_CAP - 1), &text_moved)) && text_moved <= 0 &&
+        SUCCEEDED(IUIAutomationTextRange_GetText(
+            prefix, WIN32_UIA_TEXT_CAP - 1, &text_before_caret)) &&
+        text_before_caret) {
+        UINT text_len = SysStringLen(text_before_caret);
+        UINT text_start = 0;
+        if (text_len >= WIN32_UIA_TEXT_CAP) {
+            text_start = text_len - (WIN32_UIA_TEXT_CAP - 1);
+            text_len = WIN32_UIA_TEXT_CAP - 1;
+        }
+        memcpy(snapshot->text_before_caret, text_before_caret + text_start,
+               text_len * sizeof(WCHAR));
+        snapshot->text_before_caret[text_len] = L'\0';
+        snapshot->text_before_caret_len = (int)text_len;
+        snapshot->text_before_caret_available = true;
+    }
+
 done:
+    if (text_before_caret) SysFreeString(text_before_caret);
     release_range(&selection);
     if (selections) IUIAutomationTextRangeArray_Release(selections);
     release_range(&prefix);
@@ -168,12 +192,30 @@ static void publish_snapshot(win32_uia_ctx_t *ctx,
     LeaveCriticalSection(&ctx->snapshot_lock);
 }
 
+static bool same_text_snapshot(const win32_uia_snapshot_t *a,
+                               const win32_uia_snapshot_t *b)
+{
+    return a->available && b->available &&
+           a->text_before_caret_available && b->text_before_caret_available &&
+           a->process_id == b->process_id &&
+           a->element_window == b->element_window &&
+           a->element_runtime_id == b->element_runtime_id &&
+           a->caret_offset == b->caret_offset &&
+           a->text_before_caret_len == b->text_before_caret_len &&
+           memcmp(a->text_before_caret, b->text_before_caret,
+                  (size_t)a->text_before_caret_len * sizeof(WCHAR)) == 0;
+}
+
 static DWORD WINAPI uia_worker(void *parameter)
 {
     win32_uia_ctx_t *ctx = (win32_uia_ctx_t *)parameter;
     IUIAutomation *automation = NULL;
+    win32_uia_snapshot_t previous_snapshot;
+    ULONGLONG text_stable_since_ms = 0;
     HRESULT com_result = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     bool com_initialized = SUCCEEDED(com_result);
+
+    ZeroMemory(&previous_snapshot, sizeof(previous_snapshot));
 
     if (com_initialized) {
         CoCreateInstance(&CLSID_CUIAutomation, NULL, CLSCTX_INPROC_SERVER,
@@ -186,6 +228,23 @@ static DWORD WINAPI uia_worker(void *parameter)
         /* Timestamp query start so a slow provider cannot make stale data look new. */
         snapshot.sampled_at_ms = GetTickCount64();
         if (automation) query_focused_text(automation, &snapshot);
+
+        if (same_text_snapshot(&previous_snapshot, &snapshot)) {
+            snapshot.text_before_caret_stable =
+                snapshot.sampled_at_ms >= text_stable_since_ms &&
+                snapshot.sampled_at_ms - text_stable_since_ms >=
+                    UIA_TEXT_STABLE_MS;
+        } else if (snapshot.available &&
+                   snapshot.text_before_caret_available) {
+            text_stable_since_ms = snapshot.sampled_at_ms;
+            snapshot.text_before_caret_stable = false;
+        } else {
+            text_stable_since_ms = 0;
+            ZeroMemory(&previous_snapshot, sizeof(previous_snapshot));
+        }
+        if (snapshot.available && snapshot.text_before_caret_available) {
+            previous_snapshot = snapshot;
+        }
         publish_snapshot(ctx, &snapshot);
 
         if (WaitForSingleObject(ctx->stop_event,

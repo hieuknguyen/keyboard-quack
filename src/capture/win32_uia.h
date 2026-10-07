@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <stdbool.h>
 
+#define WIN32_UIA_TEXT_CAP 257
+
 typedef struct {
     bool available;
     bool has_selection;
@@ -14,6 +16,10 @@ typedef struct {
     ULONGLONG element_runtime_id;
     LONG caret_offset;
     ULONGLONG sampled_at_ms;
+    bool text_before_caret_available;
+    bool text_before_caret_stable;
+    int text_before_caret_len;
+    WCHAR text_before_caret[WIN32_UIA_TEXT_CAP];
 } win32_uia_snapshot_t;
 
 typedef struct {

@@ -20,6 +20,7 @@ static win32_capture_ctx_t *g_capture_ctx = NULL;
 #define QUACK_TRAY_UPDATE 1005
 #define UIA_SNAPSHOT_MAX_AGE_MS 500
 #define UIA_CARET_SETTLE_MS     75
+#define WIN32_MAX_SAFE_RETYPE  32
 
 static const char *QUACK_WINDOW_CLASS = "KeyboardQuackHiddenWindow";
 static const WCHAR *QUACK_STARTUP_KEY =
@@ -403,6 +404,54 @@ static void uia_invalidate_caret(win32_capture_ctx_t *ctx)
     ctx->uia_mismatch_since_ms = 0;
 }
 
+static bool uia_text_matches_rendered(const win32_capture_ctx_t *ctx,
+                                      const win32_uia_snapshot_t *snapshot)
+{
+    if (!ctx || !ctx->tctx || !snapshot ||
+        !snapshot->text_before_caret_available ||
+        snapshot->text_before_caret_len < 0 ||
+        snapshot->text_before_caret_len >= WIN32_UIA_TEXT_CAP ||
+        ctx->tctx->rendered_len < 0 ||
+        ctx->tctx->rendered_len > TELEX_MAX_WORD) {
+        return false;
+    }
+
+    int expected_units = 0;
+    for (int i = 0; i < ctx->tctx->rendered_len; i++) {
+        uint32_t cp = ctx->tctx->rendered_cps[i];
+        if (cp > 0x10FFFF) return false;
+        expected_units += cp > 0xFFFF ? 2 : 1;
+    }
+    if (expected_units > snapshot->text_before_caret_len) return false;
+
+    int actual_index = snapshot->text_before_caret_len - expected_units;
+    for (int i = 0; i < ctx->tctx->rendered_len; i++) {
+        uint32_t cp = ctx->tctx->rendered_cps[i];
+        if (cp <= 0xFFFF) {
+            if (snapshot->text_before_caret[actual_index++] != (WCHAR)cp) {
+                return false;
+            }
+        } else {
+            cp -= 0x10000;
+            WCHAR high = (WCHAR)(0xD800 + (cp >> 10));
+            WCHAR low = (WCHAR)(0xDC00 + (cp & 0x3FF));
+            if (snapshot->text_before_caret[actual_index++] != high ||
+                snapshot->text_before_caret[actual_index++] != low) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool is_safe_retype_result(const telex_result_t *result)
+{
+    return result && result->backspace_count >= 0 &&
+           result->backspace_count <= WIN32_MAX_SAFE_RETYPE &&
+           result->output_len >= 0 &&
+           result->output_len <= WIN32_MAX_SAFE_RETYPE;
+}
+
 /* UIA may be unavailable in the newly focused app, so track app focus directly. */
 static void reset_on_foreground_change(win32_capture_ctx_t *ctx)
 {
@@ -471,6 +520,16 @@ static void uia_reconcile_before_key(win32_capture_ctx_t *ctx)
     }
 
     if (!uia_same_element(&snapshot, ctx)) {
+        telex_reset_tracking(ctx->tctx);
+        uia_remember_snapshot(ctx, &snapshot);
+        return;
+    }
+
+    /* Detect text edits made by the application or outside the key hook. */
+    if (ctx->tctx->rendered_len > 0 &&
+        snapshot.text_before_caret_stable &&
+        now - ctx->uia_last_input_ms >= UIA_CARET_SETTLE_MS &&
+        !uia_text_matches_rendered(ctx, &snapshot)) {
         telex_reset_tracking(ctx->tctx);
         uia_remember_snapshot(ctx, &snapshot);
         return;
@@ -780,6 +839,12 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         if (is_down) {
             telex_result_t result = telex_handle_backspace(g_capture_ctx->tctx);
             if (result.action == ACT_BKSP_OUTPUT) {
+                if (!is_safe_retype_result(&result)) {
+                    telex_reset_tracking(g_capture_ctx->tctx);
+                    g_capture_ctx->backspace_keydown_swallowed = false;
+                    uia_note_edit(g_capture_ctx, -1, true);
+                    return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
+                }
                 int inject_result = win32_inject_bksp_retype(
                     g_capture_ctx->ictx, result.backspace_count,
                     result.output, result.output_len);
@@ -862,6 +927,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
             return 1; /* Swallow original raw key */
 
         case ACT_BKSP_OUTPUT:
+            if (!is_safe_retype_result(&result)) {
+                telex_reset_tracking(g_capture_ctx->tctx);
+                uia_note_edit(g_capture_ctx, 1, true);
+                return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
+            }
             if (result.backspace_count > 0 || result.output_len > 0) {
                 int inject_result = win32_inject_bksp_retype(
                     g_capture_ctx->ictx, result.backspace_count,

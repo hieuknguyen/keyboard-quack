@@ -355,7 +355,7 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
-    fprintf(stderr, "=== keyboard-quack v1.0.1 ===\n");
+    fprintf(stderr, "=== keyboard-quack v1.0.2 ===\n");
     fprintf(stderr, "Vietnamese Telex Input Method\n");
     fprintf(stderr, "[quack] Detected OS: %s\n\n", platform_get_os_name());
 
