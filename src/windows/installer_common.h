@@ -4,8 +4,8 @@
 #define QUACK_INSTALLED_APP_NAME L"keyboard-quack"
 #define QUACK_INSTALLED_APP_EXE L"quack.exe"
 #define QUACK_INSTALLED_UNINSTALLER_EXE L"uninstall.exe"
-#define QUACK_VERSION_A "1.0.3"
-#define QUACK_VERSION_W L"1.0.3"
+#define QUACK_VERSION_A "1.0.4"
+#define QUACK_VERSION_W L"1.0.4"
 #define QUACK_STARTUP_REGISTRY_KEY \
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 #define QUACK_STARTUP_REGISTRY_VALUE L"keyboard-quack"

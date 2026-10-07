@@ -623,6 +623,51 @@ static int choose_tone_vowel(const telex_ctx_t *ctx)
     return start;
 }
 
+/*
+ * Vietnamese syllables have a limited set of onsets. If the leading letters
+ * can no longer form one, keep the rest of the word literal. This catches
+ * common English clusters (st, str, pl, gr, ...) before a later s/f/r/x/j or
+ * repeated vowel can be mistaken for a Telex modifier.
+ */
+static bool is_vietnamese_onset_prefix(const telex_ctx_t *ctx)
+{
+    static const char *const onsets[] = {
+        "b", "c", "ch", "d", "g", "gh", "gi", "h", "k",
+        "kh", "l", "m", "n", "ng", "ngh", "nh", "p", "ph",
+        "q", "qu", "r", "s", "t", "th", "tr", "v", "x"
+    };
+    char prefix[4];
+    int length = 0;
+
+    for (int i = 0; i < ctx->word_len; i++) {
+        const telex_token_t *token = &ctx->word[i];
+        if (token_is_vowel(token)) return true;
+
+        uint32_t cp = token->literal;
+        char ch;
+        if (cp == VN_dd || cp == VN_DD) {
+            /* d/đ share the same onset family for this prefix check. */
+            ch = 'd';
+        } else if (cp >= 'A' && cp <= 'Z') {
+            ch = (char)(cp - 'A' + 'a');
+        } else if (cp >= 'a' && cp <= 'z') {
+            ch = (char)cp;
+        } else {
+            return false;
+        }
+
+        if (length >= (int)sizeof(prefix) - 1) return false;
+        prefix[length++] = ch;
+        prefix[length] = '\0';
+    }
+
+    if (length == 0) return true;
+    for (size_t i = 0; i < sizeof(onsets) / sizeof(onsets[0]); i++) {
+        if (strncmp(onsets[i], prefix, (size_t)length) == 0) return true;
+    }
+    return false;
+}
+
 telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, bool is_upper)
 {
     telex_result_t r;
@@ -665,6 +710,25 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
         if (ctx->rendered_len < TELEX_MAX_WORD) {
             ctx->rendered_cps[ctx->rendered_len++] = (uint32_t)typed_char;
         }
+        return r;
+    }
+
+    /* Lock obvious non-Vietnamese consonant sequences to literal typing. */
+    if (!is_vietnamese_onset_prefix(ctx)) {
+        ctx->shape_cancelled = true;
+        ctx->shape_cancelled_len = ctx->word_len;
+        telex_token_t literal = {
+            .literal = (uint32_t)typed_char,
+            .vowel_type = VH_NONE,
+            .tone = TONE_NONE,
+            .is_upper = is_upper
+        };
+        if (ctx->word_len < TELEX_MAX_WORD) {
+            ctx->word[ctx->word_len++] = literal;
+            ctx->rendered_cps[ctx->rendered_len++] = (uint32_t)typed_char;
+        }
+        r.action = ACT_OUTPUT;
+        result_add(&r, (uint32_t)typed_char);
         return r;
     }
 
@@ -951,6 +1015,12 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     result_add(&r, out_cp);
     if (ctx->rendered_len < TELEX_MAX_WORD) {
         ctx->rendered_cps[ctx->rendered_len++] = out_cp;
+    }
+
+    /* If this consonant invalidated the onset, treat following keys as English. */
+    if (!token_is_vowel(&t) && !is_vietnamese_onset_prefix(ctx)) {
+        ctx->shape_cancelled = true;
+        ctx->shape_cancelled_len = ctx->word_len;
     }
     return r;
 }
