@@ -26,24 +26,12 @@ jobs:
       - name: Ensure the tag matches the app version
         shell: pwsh
         run: |
-          $header = Get-Content src/windows/installer_common.h -Raw
-          if ($header -notmatch '#define QUACK_VERSION_A "([^"]+)"') {
-            throw "Could not read QUACK_VERSION_A."
+          $versionHeader = Get-Content src/version.h -Raw
+          if ($versionHeader -notmatch '(?m)^#define QUACK_VERSION ([0-9]+\.[0-9]+\.[0-9]+)$') {
+            throw "Could not read QUACK_VERSION from src/version.h."
           }
-          $versionA = $Matches[1]
-          if ($header -notmatch '#define QUACK_VERSION_W L"([^"]+)"') {
-            throw "Could not read QUACK_VERSION_W."
-          }
-          $versionW = $Matches[1]
-          $cmake = Get-Content CMakeLists.txt -Raw
-          if ($cmake -notmatch 'project\(keyboard-quack VERSION ([0-9.]+)') {
-            throw "Could not read the CMake project version."
-          }
-          $cmakeVersion = $Matches[1]
-          if ($versionA -ne $versionW -or $versionA -ne $cmakeVersion) {
-            throw "The app and CMake versions must match."
-          }
-          $expectedTag = "v$versionA"
+          $version = $Matches[1]
+          $expectedTag = "v$version"
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
             throw "Tag $env:GITHUB_REF_NAME does not match $expectedTag."
           }

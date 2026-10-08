@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
-project(keyboard-quack VERSION 1.0.4 LANGUAGES C CXX)
+
+set(_quack_version_header "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h")
+file(STRINGS "${_quack_version_header}" _quack_version_line
+     REGEX "^#define QUACK_VERSION [0-9]+\\.[0-9]+\\.[0-9]+$")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+$" _quack_version
+       "${_quack_version_line}")
+if(_quack_version STREQUAL "")
+    message(FATAL_ERROR "Could not read QUACK_VERSION from src/version.h")
+endif()
+project(keyboard-quack VERSION "${_quack_version}" LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)

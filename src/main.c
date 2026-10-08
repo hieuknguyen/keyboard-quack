@@ -14,6 +14,7 @@
 #include "platform/platform.h"
 #include "engine/telex.h"
 #include "config/config.h"
+#include "version.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
@@ -355,7 +356,7 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
-    fprintf(stderr, "=== keyboard-quack v1.0.4 ===\n");
+    fprintf(stderr, "=== keyboard-quack v%s ===\n", QUACK_VERSION_STRING);
     fprintf(stderr, "Vietnamese Telex Input Method\n");
     fprintf(stderr, "[quack] Detected OS: %s\n\n", platform_get_os_name());
 
