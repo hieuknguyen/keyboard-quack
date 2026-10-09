@@ -9,7 +9,7 @@ void config_defaults(quack_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
     cfg->input_method = 0;       /* Telex */
-    cfg->toggle_key = 0;         /* Ctrl+Space */
+    cfg->toggle_key = QUACK_TOGGLE_NONE;
     cfg->auto_start = false;
     cfg->show_tray = true;
     cfg->enable_terminal = true;
@@ -77,9 +77,15 @@ int config_load(quack_config_t *cfg, const char *path)
                 if (strcmp(vstart, "telex") == 0) cfg->input_method = 0;
                 else if (strcmp(vstart, "vni") == 0) cfg->input_method = 1;
             } else if (strcmp(key, "toggle_key") == 0) {
-                if (strcmp(vstart, "ctrl_space") == 0) cfg->toggle_key = 0;
-                else if (strcmp(vstart, "capslock") == 0) cfg->toggle_key = 1;
-                else if (strcmp(vstart, "grave") == 0) cfg->toggle_key = 2;
+                if (strcmp(vstart, "none") == 0) cfg->toggle_key = QUACK_TOGGLE_NONE;
+                else if (strcmp(vstart, "ctrl_space") == 0) cfg->toggle_key = QUACK_TOGGLE_CTRL_SPACE;
+                else if (strcmp(vstart, "ctrl_shift") == 0) cfg->toggle_key = QUACK_TOGGLE_CTRL_SHIFT;
+                else if (strcmp(vstart, "win_space") == 0) cfg->toggle_key = QUACK_TOGGLE_WIN_SPACE;
+                else if (strcmp(vstart, "ctrl_alt_v") == 0) cfg->toggle_key = QUACK_TOGGLE_CTRL_ALT_V;
+                else if (strcmp(vstart, "ctrl_shift_v") == 0) cfg->toggle_key = QUACK_TOGGLE_CTRL_SHIFT_V;
+                else if (strcmp(vstart, "alt_space") == 0) cfg->toggle_key = QUACK_TOGGLE_ALT_SPACE;
+                else if (strcmp(vstart, "capslock") == 0) cfg->toggle_key = QUACK_TOGGLE_CAPSLOCK;
+                else if (strcmp(vstart, "grave") == 0) cfg->toggle_key = QUACK_TOGGLE_GRAVE;
             } else if (strcmp(key, "auto_start") == 0) {
                 cfg->auto_start = (strcmp(vstart, "true") == 0);
             } else if (strcmp(key, "show_tray") == 0) {
@@ -125,10 +131,21 @@ int config_save(const quack_config_t *cfg, const char *path)
     fprintf(f, "# Input method: telex or vni\n");
     fprintf(f, "input_method = \"%s\"\n", cfg->input_method == 0 ? "telex" : "vni");
     fprintf(f, "\n");
-    fprintf(f, "# Toggle key: ctrl_space, capslock, or grave\n");
-    fprintf(f, "toggle_key = \"%s\"\n",
-            cfg->toggle_key == 0 ? "ctrl_space" :
-            cfg->toggle_key == 1 ? "capslock" : "grave");
+    const char *toggle_key_name = "none";
+    switch (cfg->toggle_key) {
+    case QUACK_TOGGLE_CTRL_SPACE: toggle_key_name = "ctrl_space"; break;
+    case QUACK_TOGGLE_CTRL_SHIFT: toggle_key_name = "ctrl_shift"; break;
+    case QUACK_TOGGLE_WIN_SPACE: toggle_key_name = "win_space"; break;
+    case QUACK_TOGGLE_CTRL_ALT_V: toggle_key_name = "ctrl_alt_v"; break;
+    case QUACK_TOGGLE_CTRL_SHIFT_V: toggle_key_name = "ctrl_shift_v"; break;
+    case QUACK_TOGGLE_ALT_SPACE: toggle_key_name = "alt_space"; break;
+    case QUACK_TOGGLE_CAPSLOCK: toggle_key_name = "capslock"; break;
+    case QUACK_TOGGLE_GRAVE: toggle_key_name = "grave"; break;
+    default: break;
+    }
+    fprintf(f, "# Toggle shortcut: none, ctrl_space, ctrl_shift, win_space, ctrl_alt_v,\n");
+    fprintf(f, "# ctrl_shift_v, alt_space, capslock, or grave\n");
+    fprintf(f, "toggle_key = \"%s\"\n", toggle_key_name);
     fprintf(f, "\n");
     fprintf(f, "# Other settings\n");
     fprintf(f, "auto_start = %s\n", cfg->auto_start ? "true" : "false");

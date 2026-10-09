@@ -70,10 +70,16 @@ void MainWindow::setup_ui()
     method_layout->addRow("Method:", method_combo);
 
     toggle_combo = new QComboBox();
-    toggle_combo->addItem("Ctrl+Space", 0);
-    toggle_combo->addItem("CapsLock", 1);
-    toggle_combo->addItem("Grave (`)", 2);
-    method_layout->addRow("Toggle Key:", toggle_combo);
+    toggle_combo->addItem("Off (tray icon only)", QUACK_TOGGLE_NONE);
+    toggle_combo->addItem("Ctrl+Space", QUACK_TOGGLE_CTRL_SPACE);
+    toggle_combo->addItem("Ctrl+Shift", QUACK_TOGGLE_CTRL_SHIFT);
+    toggle_combo->addItem("Win+Space", QUACK_TOGGLE_WIN_SPACE);
+    toggle_combo->addItem("Ctrl+Alt+V", QUACK_TOGGLE_CTRL_ALT_V);
+    toggle_combo->addItem("Ctrl+Shift+V", QUACK_TOGGLE_CTRL_SHIFT_V);
+    toggle_combo->addItem("Alt+Space", QUACK_TOGGLE_ALT_SPACE);
+    toggle_combo->addItem("CapsLock", QUACK_TOGGLE_CAPSLOCK);
+    toggle_combo->addItem("Grave (`)", QUACK_TOGGLE_GRAVE);
+    method_layout->addRow("Toggle Shortcut:", toggle_combo);
 
     main_layout->addWidget(method_group);
 
@@ -125,7 +131,8 @@ void MainWindow::load_config()
     config_load(&config, NULL);
 
     method_combo->setCurrentIndex(config.input_method);
-    toggle_combo->setCurrentIndex(config.toggle_key);
+    int toggle_index = toggle_combo->findData(config.toggle_key);
+    toggle_combo->setCurrentIndex(toggle_index >= 0 ? toggle_index : 0);
     auto_start_cb->setChecked(config.auto_start);
     show_tray_cb->setChecked(config.show_tray);
     terminal_cb->setChecked(config.enable_terminal);

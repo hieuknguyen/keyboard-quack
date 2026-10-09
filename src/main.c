@@ -69,7 +69,7 @@ static void print_usage(const char *prog)
 #endif
         "  -h, --help           Show this help\n"
         "\n"
-        "Toggle Vietnamese: Ctrl+Space (or Ctrl+Shift)\n",
+        "Toggle Vietnamese: configure the shortcut in keyboard-quack settings\n",
         platform_get_os_name(),
         prog);
 }
@@ -105,6 +105,9 @@ static int alt_held = 0;
 static int gui_held = 0;
 static int caps_lock = 0;
 static int ctrl_shift_latched = 0;
+static uint16_t ctrl_shift_suppressed_code = 0;
+static bool gui_space_swallowed = false;
+static bool shortcut_keydown_swallowed[256];
 
 static uint64_t last_event_time_ms = 0;
 
@@ -173,6 +176,7 @@ static int is_navigation_key(uint16_t code)
 }
 
 static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
+                          const quack_config_t *cfg,
                           struct input_event *ev, bool is_mouse)
 {
     /* Handle pointer/mouse clicks: clicking switches focus/moves cursor, so reset tracking */
@@ -194,6 +198,16 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     bool pressed = (val == 1);
     bool repeated = (val == 2);
 
+    if (code < sizeof(shortcut_keydown_swallowed)) {
+        if (!pressed && !repeated && shortcut_keydown_swallowed[code]) {
+            shortcut_keydown_swallowed[code] = false;
+            return;
+        }
+        if ((pressed || repeated) && shortcut_keydown_swallowed[code]) {
+            return;
+        }
+    }
+
     /* Idle timeout check: pause > 1.5s resets unfinished composition */
     uint64_t now = get_time_ms();
     if (last_event_time_ms > 0 && (now - last_event_time_ms) > 1500) {
@@ -208,9 +222,20 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         if (!repeated) {
             ctrl_held = pressed ? 1 : 0;
             if (!pressed) ctrl_shift_latched = 0;
-            else if (shift_held && !ctrl_shift_latched) {
-                toggle_vietnamese(tctx);
-                ctrl_shift_latched = 1;
+            else if (shift_held) {
+                if (!ctrl_shift_latched) {
+                    if (cfg->toggle_key == QUACK_TOGGLE_CTRL_SHIFT)
+                        toggle_vietnamese(tctx);
+                    else
+                        telex_reset_tracking(tctx);
+                    ctrl_shift_latched = 1;
+                }
+                ctrl_shift_suppressed_code = code;
+                return;
+            }
+            if (!pressed && code == ctrl_shift_suppressed_code) {
+                ctrl_shift_suppressed_code = 0;
+                return;
             }
             inject_key(ictx, code, pressed);
         }
@@ -220,9 +245,20 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
         if (!repeated) {
             shift_held = pressed ? 1 : 0;
             if (!pressed) ctrl_shift_latched = 0;
-            else if (ctrl_held && !ctrl_shift_latched) {
-                toggle_vietnamese(tctx);
-                ctrl_shift_latched = 1;
+            else if (ctrl_held) {
+                if (!ctrl_shift_latched) {
+                    if (cfg->toggle_key == QUACK_TOGGLE_CTRL_SHIFT)
+                        toggle_vietnamese(tctx);
+                    else
+                        telex_reset_tracking(tctx);
+                    ctrl_shift_latched = 1;
+                }
+                ctrl_shift_suppressed_code = code;
+                return;
+            }
+            if (!pressed && code == ctrl_shift_suppressed_code) {
+                ctrl_shift_suppressed_code = 0;
+                return;
             }
             inject_key(ictx, code, pressed);
         }
@@ -246,16 +282,44 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
     }
     if (code == KC_CAPS) {
         if (pressed && !repeated) {
+            if (cfg->toggle_key == QUACK_TOGGLE_CAPSLOCK) {
+                toggle_vietnamese(tctx);
+                shortcut_keydown_swallowed[code] = true;
+                return;
+            }
             caps_lock = !caps_lock;
         }
         inject_key(ictx, code, pressed);
         return;
     }
 
-    /* Ctrl+Space toggle (only on press) */
-    if (code == KC_SPACE && ctrl_held && pressed) {
-        toggle_vietnamese(tctx);
+    /* Win+Space is reserved for the user-selected toggle; swallow it by
+     * default so the desktop cannot silently switch keyboard layouts. */
+    if (code == KC_SPACE && gui_space_swallowed && !pressed && !repeated) {
+        gui_space_swallowed = false;
         return;
+    }
+    if (code == KC_SPACE && gui_held && (pressed || repeated)) {
+        if (pressed && !repeated && cfg->toggle_key == QUACK_TOGGLE_WIN_SPACE) {
+            toggle_vietnamese(tctx);
+        } else if (pressed && !repeated) {
+            telex_reset_tracking(tctx);
+        }
+        gui_space_swallowed = true;
+        return;
+    }
+
+    if (code == KC_SPACE && pressed && !repeated) {
+        if (cfg->toggle_key == QUACK_TOGGLE_CTRL_SPACE && ctrl_held) {
+            toggle_vietnamese(tctx);
+            shortcut_keydown_swallowed[code] = true;
+            return;
+        }
+        if (cfg->toggle_key == QUACK_TOGGLE_ALT_SPACE && alt_held) {
+            toggle_vietnamese(tctx);
+            shortcut_keydown_swallowed[code] = true;
+            return;
+        }
     }
 
     /* Navigation can move the caret or selection away from the tracked text.
@@ -265,6 +329,21 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             telex_reset_tracking(tctx);
         }
         inject_key_val(ictx, code, val);
+        return;
+    }
+
+    if (code == 47 && pressed && !repeated &&
+        ((cfg->toggle_key == QUACK_TOGGLE_CTRL_ALT_V && ctrl_held && alt_held) ||
+         (cfg->toggle_key == QUACK_TOGGLE_CTRL_SHIFT_V && ctrl_held && shift_held))) {
+        toggle_vietnamese(tctx);
+        shortcut_keydown_swallowed[code] = true;
+        return;
+    }
+
+    if (code == 41 && pressed && !repeated &&
+        cfg->toggle_key == QUACK_TOGGLE_GRAVE) {
+        toggle_vietnamese(tctx);
+        shortcut_keydown_swallowed[code] = true;
         return;
     }
 
@@ -374,7 +453,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (win32_capture_init(&g_win_cap, &tctx, &g_win_inj) < 0) {
+    if (win32_capture_init(&g_win_cap, &tctx, &g_win_inj, &cfg) < 0) {
         MessageBoxA(NULL,
                     "Failed to install the keyboard hook or system tray icon.",
                     "keyboard-quack", MB_OK | MB_ICONERROR);
@@ -418,7 +497,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    fprintf(stderr, "[quack] Running on Linux. Press Ctrl+Space to toggle. Ctrl+C to exit.\n\n");
+    fprintf(stderr, "[quack] Running on Linux. Use the configured shortcut or tray/config UI to toggle. Ctrl+C to exit.\n\n");
 
     while (running) {
         struct input_event ev;
@@ -430,7 +509,7 @@ int main(int argc, char *argv[])
         }
 
         bool is_mouse = capture_is_mouse(&cap, dev_idx);
-        process_event(&tctx, &inj, &ev, is_mouse);
+        process_event(&tctx, &inj, &cfg, &ev, is_mouse);
     }
 
     fprintf(stderr, "\n[quack] Shutting down...\n");

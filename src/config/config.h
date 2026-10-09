@@ -6,11 +6,23 @@
 
 #define CONFIG_PATH_MAX 512
 
+typedef enum {
+    QUACK_TOGGLE_NONE = 0,
+    QUACK_TOGGLE_CTRL_SPACE,
+    QUACK_TOGGLE_CTRL_SHIFT,
+    QUACK_TOGGLE_WIN_SPACE,
+    QUACK_TOGGLE_CTRL_ALT_V,
+    QUACK_TOGGLE_CTRL_SHIFT_V,
+    QUACK_TOGGLE_ALT_SPACE,
+    QUACK_TOGGLE_CAPSLOCK,
+    QUACK_TOGGLE_GRAVE
+} quack_toggle_key_t;
+
 typedef struct {
     /* Input method: 0=telex, 1=vni */
     int input_method;
 
-    /* Toggle key: 0=Ctrl+Space, 1=CapsLock, 2=Grave */
+    /* Shortcut used to toggle Vietnamese input (quack_toggle_key_t). */
     int toggle_key;
 
     /* Auto-start */

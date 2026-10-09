@@ -9,6 +9,7 @@
 #include "../engine/telex.h"
 #include "../inject/win32_inject.h"
 #include "win32_uia.h"
+#include "../config/config.h"
 
 typedef struct {
     HHOOK              hook;
@@ -18,6 +19,7 @@ typedef struct {
     NOTIFYICONDATAA    tray_icon_data;
     telex_ctx_t       *tctx;
     win32_inject_ctx_t *ictx;
+    quack_config_t    *config;
     win32_uia_ctx_t    uia;
     DWORD              uia_process_id;
     HWND               uia_element_window;
@@ -34,7 +36,17 @@ typedef struct {
     bool               uia_selection_latched;
     bool               foreground_identity_initialized;
     bool               backspace_keydown_swallowed;
+    bool               physical_left_ctrl;
+    bool               physical_right_ctrl;
+    bool               physical_left_shift;
+    bool               physical_right_shift;
+    bool               physical_left_alt;
+    bool               physical_right_alt;
+    bool               physical_left_win;
+    bool               physical_right_win;
     bool               letter_keydown_swallowed[26];
+    bool               shortcut_keydown_swallowed[256];
+    bool               suppress_modifier_keyup[256];
     volatile int       running;
     int                vn_enabled;
     int                ctrl_shift_latched;
@@ -44,7 +56,8 @@ typedef struct {
 /*
  * Initialize the Windows keyboard hook capture.
  */
-int win32_capture_init(win32_capture_ctx_t *ctx, telex_ctx_t *tctx, win32_inject_ctx_t *ictx);
+int win32_capture_init(win32_capture_ctx_t *ctx, telex_ctx_t *tctx,
+                       win32_inject_ctx_t *ictx, quack_config_t *config);
 
 /*
  * Enable / Disable Vietnamese processing.
