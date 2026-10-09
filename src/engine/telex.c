@@ -746,9 +746,15 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
         if (idx >= 0) {
             int tone = keycode == KEY_S ? TONE_SAC : keycode == KEY_F ? TONE_HUYEN :
                        keycode == KEY_R ? TONE_HOI : keycode == KEY_X ? TONE_NGA : TONE_NANG;
-            if (ctx->word[idx].tone == tone) {
+            bool cancel_tone = ctx->word[idx].tone == tone;
+            /* A syllable can have only one tone mark. The target vowel may
+             * have changed after a shape key, so clear an earlier mark before
+             * applying the tone at its newly selected position. */
+            for (int i = 0; i < ctx->word_len; i++) {
+                ctx->word[i].tone = TONE_NONE;
+            }
+            if (cancel_tone) {
                 /* Repeating tone key cancels tone and adds literal at cursor (e.g. á + s -> as) */
-                ctx->word[idx].tone = TONE_NONE;
                 if (ctx->word_len < TELEX_MAX_WORD) {
                     telex_token_t literal = {
                         .literal = (uint32_t)typed_char,

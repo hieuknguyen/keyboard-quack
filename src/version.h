@@ -2,7 +2,7 @@
 #define QUACK_VERSION_H
 
 /* Change this single value once when preparing a release. */
-#define QUACK_VERSION 1.0.4
+#define QUACK_VERSION 1.0.5
 
 #define QUACK_STRINGIFY_INNER(value) #value
 #define QUACK_STRINGIFY(value) QUACK_STRINGIFY_INNER(value)
