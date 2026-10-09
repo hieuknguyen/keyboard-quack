@@ -368,7 +368,6 @@ void telex_reset(telex_ctx_t *ctx)
 void telex_set_enabled(telex_ctx_t *ctx, bool enabled)
 {
     ctx->enabled = enabled;
-    if (!enabled) telex_reset(ctx);
 }
 
 void telex_reset_tracking(telex_ctx_t *ctx)
@@ -421,6 +420,21 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
     /* Never build a screen diff from impossible or out-of-sync state. */
     if (!tracking_is_consistent(ctx)) {
         telex_reset_tracking(ctx);
+        return r;
+    }
+
+    /* In English mode the target receives raw letters and Backspace. Keep
+     * the tracking model aligned without rewriting the visible text. */
+    if (!ctx->enabled && ctx->word_len > 0) {
+        ctx->word_len--;
+        if (ctx->rendered_len > 0) ctx->rendered_len--;
+        ctx->undo_valid = false;
+        ctx->deleted_token_valid = false;
+        if (ctx->word_len == 0 ||
+            (ctx->shape_cancelled && ctx->word_len < ctx->shape_cancelled_len)) {
+            ctx->shape_cancelled = false;
+            ctx->shape_cancelled_len = 0;
+        }
         return r;
     }
 
@@ -731,8 +745,39 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     if (!tracking_is_consistent(ctx)) {
         telex_reset_tracking(ctx);
     }
+    char ch = keycode_to_char(keycode);
+    if (!ch) {
+        telex_commit_word(ctx);
+        return r;
+    }
+
+    char typed_char = is_upper ? (ch >= 'a' && ch <= 'z' ? (char)(ch - 32) : ch) : ch;
+
     if (!ctx->enabled) {
+        if (ctx->word_len < TELEX_MAX_WORD) {
+            telex_token_t literal = {
+                .literal = (uint32_t)typed_char,
+                .vowel_type = kc_to_vowel_type(keycode),
+                .tone = TONE_NONE,
+                .is_upper = is_upper
+            };
+            ctx->word[ctx->word_len++] = literal;
+            if (ctx->rendered_len < TELEX_MAX_WORD) {
+                ctx->rendered_cps[ctx->rendered_len++] = (uint32_t)typed_char;
+            }
+
+            bool valid_syllable_prefix =
+                is_valid_vietnamese_syllable_prefix(ctx);
+            if (!valid_syllable_prefix ||
+                (!token_is_vowel(&literal) && !is_vietnamese_onset_prefix(ctx))) {
+                ctx->shape_cancelled = true;
+                ctx->shape_cancelled_len = ctx->word_len;
+            }
+        }
+        ctx->undo_valid = false;
+        ctx->deleted_token_valid = false;
         r.action = ACT_OUTPUT;
+        result_add(&r, (uint32_t)typed_char);
         return r;
     }
 
@@ -741,14 +786,6 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
     ctx->undo_rendered_len = ctx->rendered_len;
     memcpy(ctx->undo_rendered_cps, ctx->rendered_cps, sizeof(ctx->rendered_cps));
     ctx->undo_valid = true;
-
-    char ch = keycode_to_char(keycode);
-    if (!ch) {
-        telex_commit_word(ctx);
-        return r;
-    }
-
-    char typed_char = is_upper ? (ch >= 'a' && ch <= 'z' ? (char)(ch - 32) : ch) : ch;
 
     /* Once shape/tone is cancelled in this word, keep following keys literal until word boundary */
     if (ctx->shape_cancelled) {

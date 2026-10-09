@@ -3,8 +3,7 @@
 # Input method: telex or vni
 input_method = "telex"
 
-# Toggle shortcut: none, ctrl_space, ctrl_shift, win_space, ctrl_alt_v,
-# ctrl_shift_v, alt_space, capslock, or grave
+# Toggle shortcut is disabled by default. Set it in Settings or the tray menu.
 toggle_key = "none"
 
 # Auto-start on login

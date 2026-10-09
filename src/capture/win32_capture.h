@@ -16,6 +16,7 @@ typedef struct {
     HHOOK              mouse_hook;
     DWORD              thread_id;
     HWND               tray_window;
+    HWND               shortcut_dialog;
     NOTIFYICONDATAA    tray_icon_data;
     telex_ctx_t       *tctx;
     win32_inject_ctx_t *ictx;
@@ -51,6 +52,9 @@ typedef struct {
     int                vn_enabled;
     int                ctrl_shift_latched;
     bool               tray_icon_visible;
+    bool               shortcut_recording;
+    uint16_t           pending_shortcut_key;
+    uint8_t            pending_shortcut_modifiers;
 } win32_capture_ctx_t;
 
 /*

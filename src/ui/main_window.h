@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QComboBox>
+#include <QKeySequenceEdit>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QLabel>
@@ -33,7 +34,7 @@ private:
     quack_config_t config;
 
     QComboBox *method_combo;
-    QComboBox *toggle_combo;
+    QKeySequenceEdit *toggle_shortcut_edit;
     QCheckBox *auto_start_cb;
     QCheckBox *show_tray_cb;
     QCheckBox *terminal_cb;

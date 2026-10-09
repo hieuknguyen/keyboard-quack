@@ -58,7 +58,7 @@ Script cài đặt sẽ tự động:
    ```
 Chạy `quack.exe` trong thư mục `build-windows\Release` (Visual Studio) hoặc `build-windows` (generator một cấu hình). Ứng dụng chạy nền và hiện biểu tượng ở khay hệ thống, không mở cửa sổ terminal.
 
-Ứng dụng bắt phím bằng Win32 Low-Level Keyboard Hook và gửi chữ tiếng Việt qua `SendInput`. Bấm biểu tượng khay hệ thống để bật/tắt; bấm chuột phải để mở menu, chọn **Toggle shortcut**, thoát, thêm/gỡ chạy cùng Windows, hoặc gỡ ứng dụng. Phím tắt bật/tắt mặc định là **Off**; có thể chọn `Ctrl+Space`, `Ctrl+Shift`, `Win+Space`, `Ctrl+Alt+V`, `Ctrl+Shift+V`, `Alt+Space`, `CapsLock` hoặc `Grave`. Khi app chạy, `Ctrl+Shift` và `Win+Space` không còn tự đổi layout Windows nếu chưa được chọn làm phím tắt của app. Giao diện `quack-config` chỉ được tạo nếu Qt5 hoặc Qt6 Widgets đã có sẵn khi cấu hình CMake.
+Ứng dụng bắt phím bằng Win32 Low-Level Keyboard Hook và gửi chữ tiếng Việt qua `SendInput`. Bấm biểu tượng khay hệ thống để bật/tắt; bấm chuột phải để mở menu, chọn **Toggle shortcut** rồi **Set custom shortcut...** để nhấn tổ hợp phím muốn dùng. Shortcut cần có Ctrl, Shift, Alt hoặc Win; riêng Caps Lock có thể dùng một mình. Shortcut mặc định tắt và có thể gỡ bằng **Turn shortcut off**. Khi app chạy, `Ctrl+Shift` và `Win+Space` không còn tự đổi layout Windows nếu chưa được chọn làm phím tắt của app. Giao diện `quack-config` cũng ghi nhận shortcut do người dùng nhấn và chỉ được tạo nếu Qt5 hoặc Qt6 Widgets đã có sẵn khi cấu hình CMake.
 
 Trong menu khay hệ thống, chọn **Check for updates** để kiểm tra GitHub Releases của repo `hieuknguyen/keyboard-quack`. Tính năng cập nhật trong ứng dụng dành cho bản đã cài; nếu có phiên bản mới, ứng dụng tải `keyboard-quack-setup.exe`, xác minh SHA-256 rồi mở bộ cài để nâng cấp. Khi phát hành bản mới, chỉ cần đổi `QUACK_VERSION` trong `src/version.h`, rồi push tag `vMAJOR.MINOR.PATCH` khớp với giá trị đó. CMake, ứng dụng và installer tự đọc cùng phiên bản này; workflow `.github/workflows/windows-release.yml` kiểm tra tag rồi tự build setup và tạo GitHub Release.
 
@@ -68,7 +68,7 @@ Trên Windows, ứng dụng xóa trạng thái Telex khi chuyển cửa sổ ứ
 
 ## Hướng dẫn sử dụng
 
-- **Bật / Tắt tiếng Việt:** Mặc định dùng biểu tượng khay hệ thống. Chọn phím tắt tại **Toggle shortcut** trong menu chuột phải trên Windows, hoặc trong `quack-config` nếu đã cài GUI.
+- **Bật / Tắt tiếng Việt:** Mặc định dùng biểu tượng khay hệ thống. Tạo shortcut riêng trong **Toggle shortcut → Set custom shortcut...** trên Windows, hoặc nhập trực tiếp bằng ô ghi nhận phím trong `quack-config`.
 - **Mở giao diện cài đặt:** 
   - Chạy lệnh `quack-config` trong Terminal/Command Prompt.
   - Hoặc tìm **"keyboard-quack"** trong Menu ứng dụng.

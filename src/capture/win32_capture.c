@@ -18,12 +18,17 @@ static win32_capture_ctx_t *g_capture_ctx = NULL;
 #define QUACK_TRAY_STARTUP 1003
 #define QUACK_TRAY_UNINSTALL 1004
 #define QUACK_TRAY_UPDATE 1005
-#define QUACK_TRAY_SHORTCUT_BASE 1100
+#define QUACK_TRAY_SET_SHORTCUT 1006
+#define QUACK_TRAY_CLEAR_SHORTCUT 1007
+#define QUACK_TRAY_SHORTCUT_CAPTURED (WM_APP + 2)
+#define QUACK_TRAY_SHORTCUT_CANCELLED (WM_APP + 3)
+#define QUACK_SHORTCUT_CANCEL_BUTTON 1
 #define UIA_SNAPSHOT_MAX_AGE_MS 500
 #define UIA_CARET_SETTLE_MS     75
 #define WIN32_MAX_SAFE_RETYPE  32
 
 static const char *QUACK_WINDOW_CLASS = "KeyboardQuackHiddenWindow";
+static const char *QUACK_SHORTCUT_DIALOG_CLASS = "KeyboardQuackShortcutDialog";
 static const WCHAR *QUACK_STARTUP_KEY =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 static const WCHAR *QUACK_STARTUP_VALUE = L"keyboard-quack";
@@ -598,28 +603,86 @@ static bool is_printable_vk(DWORD vk)
            vk == VK_DECIMAL;
 }
 
-static const char *toggle_shortcut_label(int toggle_key)
+static LRESULT CALLBACK ShortcutDialogProc(HWND hwnd, UINT message,
+                                           WPARAM wParam, LPARAM lParam)
 {
-    switch (toggle_key) {
-    case QUACK_TOGGLE_CTRL_SPACE: return "Ctrl+Space";
-    case QUACK_TOGGLE_CTRL_SHIFT: return "Ctrl+Shift";
-    case QUACK_TOGGLE_WIN_SPACE: return "Win+Space";
-    case QUACK_TOGGLE_CTRL_ALT_V: return "Ctrl+Alt+V";
-    case QUACK_TOGGLE_CTRL_SHIFT_V: return "Ctrl+Shift+V";
-    case QUACK_TOGGLE_ALT_SPACE: return "Alt+Space";
-    case QUACK_TOGGLE_CAPSLOCK: return "CapsLock";
-    case QUACK_TOGGLE_GRAVE: return "Grave (`)";
-    default: return "Off (tray icon only)";
+    (void)lParam;
+    switch (message) {
+    case WM_CREATE:
+        CreateWindowExA(0, "STATIC",
+                        "Press your shortcut now. Esc cancels.",
+                        WS_CHILD | WS_VISIBLE, 18, 18, 330, 28,
+                        hwnd, NULL, GetModuleHandleA(NULL), NULL);
+        CreateWindowExA(0, "BUTTON", "Cancel",
+                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                        270, 58, 78, 26, hwnd,
+                        (HMENU)(INT_PTR)QUACK_SHORTCUT_CANCEL_BUTTON,
+                        GetModuleHandleA(NULL), NULL);
+        return 0;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == QUACK_SHORTCUT_CANCEL_BUTTON && g_capture_ctx)
+            PostMessageA(g_capture_ctx->tray_window,
+                         QUACK_TRAY_SHORTCUT_CANCELLED, 0, 0);
+        return 0;
+    case WM_CLOSE:
+        if (g_capture_ctx)
+            PostMessageA(g_capture_ctx->tray_window,
+                         QUACK_TRAY_SHORTCUT_CANCELLED, 0, 0);
+        return 0;
+    default:
+        return DefWindowProcA(hwnd, message, wParam, lParam);
     }
 }
 
-static void append_shortcut_choice(HMENU menu, int toggle_key,
-                                   const char *label)
+static void start_shortcut_capture(HWND owner)
 {
-    UINT flags = MF_STRING | (g_capture_ctx->config->toggle_key == toggle_key
-                                  ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuA(menu, flags, QUACK_TRAY_SHORTCUT_BASE + (UINT)toggle_key,
-                label);
+    if (g_capture_ctx->shortcut_dialog) {
+        SetForegroundWindow(g_capture_ctx->shortcut_dialog);
+        return;
+    }
+
+    WNDCLASSEXA window_class;
+    ZeroMemory(&window_class, sizeof(window_class));
+    window_class.cbSize = sizeof(window_class);
+    window_class.lpfnWndProc = ShortcutDialogProc;
+    window_class.hInstance = GetModuleHandleA(NULL);
+    window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
+    window_class.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    window_class.lpszClassName = QUACK_SHORTCUT_DIALOG_CLASS;
+    if (!RegisterClassExA(&window_class) &&
+        GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        MessageBoxA(owner, "Could not open shortcut capture.",
+                    "keyboard-quack", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    g_capture_ctx->pending_shortcut_key = 0;
+    g_capture_ctx->pending_shortcut_modifiers = 0;
+    g_capture_ctx->shortcut_recording = true;
+    g_capture_ctx->shortcut_dialog = CreateWindowExA(
+        WS_EX_DLGMODALFRAME | WS_EX_TOPMOST, QUACK_SHORTCUT_DIALOG_CLASS,
+        "Set toggle shortcut", WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT, CW_USEDEFAULT, 370, 132, owner, NULL,
+        GetModuleHandleA(NULL), NULL);
+    if (!g_capture_ctx->shortcut_dialog) {
+        g_capture_ctx->shortcut_recording = false;
+        MessageBoxA(owner, "Could not open shortcut capture.",
+                    "keyboard-quack", MB_OK | MB_ICONERROR);
+        return;
+    }
+    ShowWindow(g_capture_ctx->shortcut_dialog, SW_SHOW);
+    UpdateWindow(g_capture_ctx->shortcut_dialog);
+    SetForegroundWindow(g_capture_ctx->shortcut_dialog);
+}
+
+static void close_shortcut_capture(void)
+{
+    if (!g_capture_ctx) return;
+    g_capture_ctx->shortcut_recording = false;
+    if (g_capture_ctx->shortcut_dialog) {
+        DestroyWindow(g_capture_ctx->shortcut_dialog);
+        g_capture_ctx->shortcut_dialog = NULL;
+    }
 }
 
 static void show_tray_menu(HWND hwnd)
@@ -636,28 +699,18 @@ static void show_tray_menu(HWND hwnd)
     AppendMenuA(menu, MF_STRING, QUACK_TRAY_TOGGLE, toggle_text);
     HMENU shortcut_menu = CreatePopupMenu();
     if (shortcut_menu) {
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_NONE,
-                               "Off (tray icon only)");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_CTRL_SPACE,
-                               "Ctrl+Space");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_CTRL_SHIFT,
-                               "Ctrl+Shift");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_WIN_SPACE,
-                               "Win+Space");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_CTRL_ALT_V,
-                               "Ctrl+Alt+V");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_CTRL_SHIFT_V,
-                               "Ctrl+Shift+V");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_ALT_SPACE,
-                               "Alt+Space");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_CAPSLOCK,
-                               "CapsLock");
-        append_shortcut_choice(shortcut_menu, QUACK_TOGGLE_GRAVE,
-                               "Grave (`)");
+        AppendMenuA(shortcut_menu, MF_STRING, QUACK_TRAY_SET_SHORTCUT,
+                    "Set custom shortcut...");
+        AppendMenuA(shortcut_menu, MF_STRING, QUACK_TRAY_CLEAR_SHORTCUT,
+                    "Turn shortcut off");
         char shortcut_label[96];
+        char current_shortcut[CONFIG_SHORTCUT_MAX];
+        config_format_toggle_shortcut(g_capture_ctx->config,
+                                      current_shortcut,
+                                      sizeof(current_shortcut));
         snprintf(shortcut_label, sizeof(shortcut_label),
                  "Toggle shortcut: %s",
-                 toggle_shortcut_label(g_capture_ctx->config->toggle_key));
+                 current_shortcut);
         AppendMenuA(menu, MF_POPUP, (UINT_PTR)shortcut_menu, shortcut_label);
     }
     AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
@@ -683,12 +736,16 @@ static void show_tray_menu(HWND hwnd)
 
     if (command == QUACK_TRAY_TOGGLE) {
         win32_capture_set_enabled(g_capture_ctx, !g_capture_ctx->vn_enabled);
-    } else if (command >= QUACK_TRAY_SHORTCUT_BASE &&
-               command <= QUACK_TRAY_SHORTCUT_BASE + QUACK_TOGGLE_GRAVE) {
-        g_capture_ctx->config->toggle_key =
-            (int)(command - QUACK_TRAY_SHORTCUT_BASE);
-        int save_result = config_save(g_capture_ctx->config, NULL);
-        if (save_result != 0) {
+    } else if (command == QUACK_TRAY_SET_SHORTCUT) {
+        start_shortcut_capture(hwnd);
+    } else if (command == QUACK_TRAY_CLEAR_SHORTCUT) {
+        quack_config_t old_config = *g_capture_ctx->config;
+        g_capture_ctx->config->toggle_key = QUACK_TOGGLE_NONE;
+        g_capture_ctx->config->toggle_custom_key = 0;
+        g_capture_ctx->config->toggle_custom_modifiers = 0;
+        g_capture_ctx->config->toggle_shortcut[0] = '\0';
+        if (config_save(g_capture_ctx->config, NULL) != 0) {
+            *g_capture_ctx->config = old_config;
             MessageBoxA(hwnd, "Could not save the toggle shortcut setting.",
                         "keyboard-quack", MB_OK | MB_ICONERROR);
         }
@@ -712,6 +769,26 @@ static void show_tray_menu(HWND hwnd)
 static LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT message,
                                        WPARAM wParam, LPARAM lParam)
 {
+    if (g_capture_ctx && message == QUACK_TRAY_SHORTCUT_CAPTURED) {
+        close_shortcut_capture();
+        quack_config_t old_config = *g_capture_ctx->config;
+        if (!config_set_toggle_shortcut(g_capture_ctx->config,
+                                        (uint16_t)wParam,
+                                        (uint8_t)lParam) ||
+            config_save(g_capture_ctx->config, NULL) != 0) {
+            *g_capture_ctx->config = old_config;
+            MessageBoxA(hwnd, "Could not save the toggle shortcut setting.",
+                        "keyboard-quack", MB_OK | MB_ICONERROR);
+        }
+        g_capture_ctx->ctrl_shift_latched = 0;
+        telex_reset_tracking(g_capture_ctx->tctx);
+        uia_invalidate_caret(g_capture_ctx);
+        return 0;
+    }
+    if (g_capture_ctx && message == QUACK_TRAY_SHORTCUT_CANCELLED) {
+        close_shortcut_capture();
+        return 0;
+    }
     if (message == QUACK_TRAY_MESSAGE && g_capture_ctx) {
         if (lParam == WM_LBUTTONUP) {
             win32_capture_set_enabled(g_capture_ctx,
@@ -835,11 +912,76 @@ static bool is_control_or_shift_vk(DWORD vk)
            vk == VK_RCONTROL;
 }
 
-static bool configured_shortcut_matches(int shortcut, DWORD vk,
+static bool is_modifier_vk(DWORD vk)
+{
+    return is_control_or_shift_vk(vk) || vk == VK_LMENU || vk == VK_RMENU ||
+           vk == VK_LWIN || vk == VK_RWIN;
+}
+
+static uint16_t windows_vk_to_hid(DWORD vk)
+{
+    if (vk >= 'A' && vk <= 'Z')
+        return (uint16_t)(0x04 + (vk - 'A'));
+    if (vk >= '1' && vk <= '9')
+        return (uint16_t)(0x1E + (vk - '1'));
+    if (vk == '0') return 0x27;
+    if (vk >= VK_F1 && vk <= VK_F12)
+        return (uint16_t)(0x3A + (vk - VK_F1));
+    if (vk >= VK_F13 && vk <= VK_F24)
+        return (uint16_t)(0x68 + (vk - VK_F13));
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+        return vk == VK_NUMPAD0
+            ? 0x62
+            : (uint16_t)(0x59 + (vk - VK_NUMPAD1));
+
+    switch (vk) {
+    case VK_RETURN: return 0x28;
+    case VK_ESCAPE: return 0x29;
+    case VK_BACK: return 0x2A;
+    case VK_TAB: return 0x2B;
+    case VK_SPACE: return 0x2C;
+    case VK_OEM_MINUS: return 0x2D;
+    case VK_OEM_PLUS: return 0x2E;
+    case VK_OEM_4: return 0x2F;
+    case VK_OEM_6: return 0x30;
+    case VK_OEM_5: return 0x31;
+    case VK_OEM_1: return 0x33;
+    case VK_OEM_7: return 0x34;
+    case VK_OEM_3: return 0x35;
+    case VK_OEM_COMMA: return 0x36;
+    case VK_OEM_PERIOD: return 0x37;
+    case VK_OEM_2: return 0x38;
+    case VK_CAPITAL: return 0x39;
+    case VK_SNAPSHOT: return 0x46;
+    case VK_SCROLL: return 0x47;
+    case VK_PAUSE: return 0x48;
+    case VK_INSERT: return 0x49;
+    case VK_HOME: return 0x4A;
+    case VK_PRIOR: return 0x4B;
+    case VK_DELETE: return 0x4C;
+    case VK_END: return 0x4D;
+    case VK_NEXT: return 0x4E;
+    case VK_RIGHT: return 0x4F;
+    case VK_LEFT: return 0x50;
+    case VK_DOWN: return 0x51;
+    case VK_UP: return 0x52;
+    case VK_NUMLOCK: return 0x53;
+    case VK_DIVIDE: return 0x54;
+    case VK_MULTIPLY: return 0x55;
+    case VK_SUBTRACT: return 0x56;
+    case VK_ADD: return 0x57;
+    case VK_DECIMAL: return 0x63;
+    case VK_OEM_102: return 0x64;
+    case VK_APPS: return 0x65;
+    default: return 0;
+    }
+}
+
+static bool configured_shortcut_matches(const quack_config_t *config, DWORD vk,
                                         bool ctrl_down, bool shift_down,
                                         bool alt_down, bool win_down)
 {
-    switch (shortcut) {
+    switch (config->toggle_key) {
     case QUACK_TOGGLE_CTRL_SPACE:
         return vk == VK_SPACE && ctrl_down && !shift_down && !alt_down && !win_down;
     case QUACK_TOGGLE_WIN_SPACE:
@@ -854,6 +996,15 @@ static bool configured_shortcut_matches(int shortcut, DWORD vk,
         return vk == VK_CAPITAL && !ctrl_down && !shift_down && !alt_down && !win_down;
     case QUACK_TOGGLE_GRAVE:
         return vk == VK_OEM_3 && !ctrl_down && !shift_down && !alt_down && !win_down;
+    case QUACK_TOGGLE_CUSTOM: {
+        uint8_t modifiers = 0;
+        if (ctrl_down) modifiers |= QUACK_SHORTCUT_MOD_CTRL;
+        if (shift_down) modifiers |= QUACK_SHORTCUT_MOD_SHIFT;
+        if (alt_down) modifiers |= QUACK_SHORTCUT_MOD_ALT;
+        if (win_down) modifiers |= QUACK_SHORTCUT_MOD_WIN;
+        return windows_vk_to_hid(vk) == config->toggle_custom_key &&
+               modifiers == config->toggle_custom_modifiers;
+    }
     default:
         return false;
     }
@@ -862,8 +1013,6 @@ static bool configured_shortcut_matches(int shortcut, DWORD vk,
 static void toggle_from_shortcut(win32_capture_ctx_t *ctx)
 {
     win32_capture_set_enabled(ctx, !ctx->vn_enabled);
-    telex_reset_tracking(ctx->tctx);
-    uia_invalidate_caret(ctx);
 }
 
 static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
@@ -892,6 +1041,16 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     else if (vk == VK_LWIN) g_capture_ctx->physical_left_win = is_down;
     else if (vk == VK_RWIN) g_capture_ctx->physical_right_win = is_down;
 
+    bool ctrl_down = g_capture_ctx->physical_left_ctrl ||
+                     g_capture_ctx->physical_right_ctrl;
+    bool shift_down = g_capture_ctx->physical_left_shift ||
+                      g_capture_ctx->physical_right_shift;
+    bool alt_down = g_capture_ctx->physical_left_alt ||
+                    g_capture_ctx->physical_right_alt;
+    bool win_down = g_capture_ctx->physical_left_win ||
+                    g_capture_ctx->physical_right_win;
+    bool caps_on = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+
     if (vk < 256) {
         if (is_up && g_capture_ctx->suppress_modifier_keyup[vk]) {
             g_capture_ctx->suppress_modifier_keyup[vk] = false;
@@ -914,6 +1073,40 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         }
     }
 
+    if (g_capture_ctx->shortcut_recording) {
+        if (is_modifier_vk(vk)) {
+            if (is_down && vk < 256)
+                g_capture_ctx->suppress_modifier_keyup[vk] = true;
+            return 1;
+        }
+        if (is_down) {
+            uint8_t modifiers = 0;
+            if (ctrl_down) modifiers |= QUACK_SHORTCUT_MOD_CTRL;
+            if (shift_down) modifiers |= QUACK_SHORTCUT_MOD_SHIFT;
+            if (alt_down) modifiers |= QUACK_SHORTCUT_MOD_ALT;
+            if (win_down) modifiers |= QUACK_SHORTCUT_MOD_WIN;
+            if (vk == VK_ESCAPE && modifiers == 0) {
+                if (vk < 256)
+                    g_capture_ctx->shortcut_keydown_swallowed[vk] = true;
+                PostMessageA(g_capture_ctx->tray_window,
+                             QUACK_TRAY_SHORTCUT_CANCELLED, 0, 0);
+                return 1;
+            }
+            uint16_t key = windows_vk_to_hid(vk);
+            if (key && (modifiers != 0 || key == 0x39)) {
+                g_capture_ctx->pending_shortcut_key = key;
+                g_capture_ctx->pending_shortcut_modifiers = modifiers;
+                PostMessageA(g_capture_ctx->tray_window,
+                             QUACK_TRAY_SHORTCUT_CAPTURED,
+                             (WPARAM)key, (LPARAM)modifiers);
+            }
+            if (vk < 256)
+                g_capture_ctx->shortcut_keydown_swallowed[vk] = true;
+            return 1;
+        }
+        return 1;
+    }
+
     if (vk >= 'A' && vk <= 'Z') {
         int letter_index = (int)(vk - 'A');
         if (is_up) {
@@ -928,25 +1121,18 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         }
     }
 
-    bool ctrl_down = g_capture_ctx->physical_left_ctrl ||
-                     g_capture_ctx->physical_right_ctrl;
-    bool shift_down = g_capture_ctx->physical_left_shift ||
-                      g_capture_ctx->physical_right_shift;
-    bool alt_down = g_capture_ctx->physical_left_alt ||
-                    g_capture_ctx->physical_right_alt;
-    bool win_down = g_capture_ctx->physical_left_win ||
-                    g_capture_ctx->physical_right_win;
-    bool caps_on    = (GetKeyState(VK_CAPITAL)     & 0x0001) != 0;
-
-    /* Keep Windows' default layout-switch shortcuts from changing input
-     * language behind the Vietnamese mode toggle. Ctrl+Shift remains
-     * available when explicitly selected in the tray menu. */
+    /* Keep Windows' default layout-switch shortcut from changing the input
+     * language. Legacy Ctrl+Shift settings still work; custom shortcuts with
+     * Ctrl+Shift use their final key below. */
     if (is_control_or_shift_vk(vk)) {
         if (is_down && ctrl_down && shift_down) {
             if (!g_capture_ctx->ctrl_shift_latched) {
                 if (g_capture_ctx->config->toggle_key == QUACK_TOGGLE_CTRL_SHIFT)
                     toggle_from_shortcut(g_capture_ctx);
-                else {
+                else if (g_capture_ctx->config->toggle_key != QUACK_TOGGLE_CUSTOM ||
+                         (g_capture_ctx->config->toggle_custom_modifiers &
+                          (QUACK_SHORTCUT_MOD_CTRL | QUACK_SHORTCUT_MOD_SHIFT)) !=
+                             (QUACK_SHORTCUT_MOD_CTRL | QUACK_SHORTCUT_MOD_SHIFT)) {
                     telex_reset_tracking(g_capture_ctx->tctx);
                     uia_invalidate_caret(g_capture_ctx);
                 }
@@ -964,7 +1150,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
      * while the app is running; if selected, use it for the app toggle. */
     if (vk == VK_SPACE && win_down) {
         if (is_down && configured_shortcut_matches(
-                g_capture_ctx->config->toggle_key, vk, ctrl_down, shift_down,
+                g_capture_ctx->config, vk, ctrl_down, shift_down,
                 alt_down, win_down)) {
             toggle_from_shortcut(g_capture_ctx);
         } else if (is_down) {
@@ -977,7 +1163,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     }
 
     if (is_down && configured_shortcut_matches(
-            g_capture_ctx->config->toggle_key, vk, ctrl_down, shift_down,
+            g_capture_ctx->config, vk, ctrl_down, shift_down,
             alt_down, win_down)) {
         toggle_from_shortcut(g_capture_ctx);
         if (vk < 256) g_capture_ctx->shortcut_keydown_swallowed[vk] = true;
@@ -1075,6 +1261,9 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     /* Letter keys ('A'..'Z') */
     if (!g_capture_ctx->vn_enabled) {
         if (is_down) {
+            uint16_t code = vk_to_telex_keycode(vk);
+            bool is_upper = (shift_down ^ caps_on) != 0;
+            (void)telex_process(g_capture_ctx->tctx, code, true, is_upper);
             uia_note_edit(g_capture_ctx, 1, true);
         }
         return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
@@ -1234,6 +1423,11 @@ void win32_capture_stop(win32_capture_ctx_t *ctx)
 
 void win32_capture_cleanup(win32_capture_ctx_t *ctx)
 {
+    if (ctx->shortcut_dialog) {
+        ctx->shortcut_recording = false;
+        DestroyWindow(ctx->shortcut_dialog);
+        ctx->shortcut_dialog = NULL;
+    }
     if (ctx->tray_icon_visible) {
         Shell_NotifyIconA(NIM_DELETE, &ctx->tray_icon_data);
         ctx->tray_icon_visible = false;

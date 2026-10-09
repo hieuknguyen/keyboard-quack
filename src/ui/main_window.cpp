@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QMenu>
 #include <QAction>
+#include <QKeySequence>
 
 extern "C" {
 #include "../config/config.h"
@@ -47,7 +48,7 @@ MainWindow::~MainWindow()
 void MainWindow::setup_ui()
 {
     setWindowTitle("keyboard-quack Settings");
-    setFixedSize(400, 350);
+    setFixedSize(440, 370);
 
     QWidget *central = new QWidget(this);
     setCentralWidget(central);
@@ -69,17 +70,21 @@ void MainWindow::setup_ui()
     method_combo->addItem("VNI", 1);
     method_layout->addRow("Method:", method_combo);
 
-    toggle_combo = new QComboBox();
-    toggle_combo->addItem("Off (tray icon only)", QUACK_TOGGLE_NONE);
-    toggle_combo->addItem("Ctrl+Space", QUACK_TOGGLE_CTRL_SPACE);
-    toggle_combo->addItem("Ctrl+Shift", QUACK_TOGGLE_CTRL_SHIFT);
-    toggle_combo->addItem("Win+Space", QUACK_TOGGLE_WIN_SPACE);
-    toggle_combo->addItem("Ctrl+Alt+V", QUACK_TOGGLE_CTRL_ALT_V);
-    toggle_combo->addItem("Ctrl+Shift+V", QUACK_TOGGLE_CTRL_SHIFT_V);
-    toggle_combo->addItem("Alt+Space", QUACK_TOGGLE_ALT_SPACE);
-    toggle_combo->addItem("CapsLock", QUACK_TOGGLE_CAPSLOCK);
-    toggle_combo->addItem("Grave (`)", QUACK_TOGGLE_GRAVE);
-    method_layout->addRow("Toggle Shortcut:", toggle_combo);
+    QWidget *shortcut_row = new QWidget();
+    QHBoxLayout *shortcut_layout = new QHBoxLayout(shortcut_row);
+    shortcut_layout->setContentsMargins(0, 0, 0, 0);
+    toggle_shortcut_edit = new QKeySequenceEdit();
+    toggle_shortcut_edit->setToolTip(
+        "Press the shortcut you want. It must include a modifier key; "
+        "Caps Lock can be used by itself.");
+    shortcut_layout->addWidget(toggle_shortcut_edit, 1);
+    QPushButton *clear_shortcut_btn = new QPushButton("Off");
+    clear_shortcut_btn->setToolTip("Disable the keyboard shortcut");
+    connect(clear_shortcut_btn, &QPushButton::clicked, this, [this]() {
+        toggle_shortcut_edit->setKeySequence(QKeySequence());
+    });
+    shortcut_layout->addWidget(clear_shortcut_btn);
+    method_layout->addRow("Toggle Shortcut:", shortcut_row);
 
     main_layout->addWidget(method_group);
 
@@ -131,8 +136,17 @@ void MainWindow::load_config()
     config_load(&config, NULL);
 
     method_combo->setCurrentIndex(config.input_method);
-    int toggle_index = toggle_combo->findData(config.toggle_key);
-    toggle_combo->setCurrentIndex(toggle_index >= 0 ? toggle_index : 0);
+    char shortcut[CONFIG_SHORTCUT_MAX];
+    config_format_toggle_shortcut(&config, shortcut, sizeof(shortcut));
+    QString shortcut_label = QString::fromUtf8(shortcut);
+    shortcut_label.replace("Win+", "Meta+");
+    if (shortcut_label == "Off" || shortcut_label == "Ctrl+Shift") {
+        toggle_shortcut_edit->setKeySequence(QKeySequence());
+    } else {
+        toggle_shortcut_edit->setKeySequence(
+            QKeySequence::fromString(shortcut_label,
+                                     QKeySequence::PortableText));
+    }
     auto_start_cb->setChecked(config.auto_start);
     show_tray_cb->setChecked(config.show_tray);
     terminal_cb->setChecked(config.enable_terminal);
@@ -142,8 +156,23 @@ void MainWindow::load_config()
 
 void MainWindow::save_config()
 {
+    QKeySequence sequence = toggle_shortcut_edit->keySequence();
+    if (sequence.count() > 1) {
+        QMessageBox::warning(this, "Invalid shortcut",
+                             "Choose a single shortcut, not a key sequence.");
+        return;
+    }
+    QString shortcut_text = sequence.toString(QKeySequence::PortableText);
+    QByteArray shortcut_bytes = shortcut_text.toUtf8();
+    if (!config_parse_toggle_shortcut(&config, shortcut_bytes.constData())) {
+        QMessageBox::warning(
+            this, "Invalid shortcut",
+            "Use a shortcut with Ctrl, Shift, Alt, or Win. "
+            "Caps Lock can be used by itself.");
+        return;
+    }
+
     config.input_method = method_combo->currentData().toInt();
-    config.toggle_key = toggle_combo->currentData().toInt();
     config.auto_start = auto_start_cb->isChecked();
     config.show_tray = show_tray_cb->isChecked();
     config.enable_terminal = terminal_cb->isChecked();
