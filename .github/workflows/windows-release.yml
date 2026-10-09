@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
         run: |
           $versionHeader = Get-Content src/version.h -Raw
-          if ($versionHeader -notmatch '(?m)^#define QUACK_VERSION ([0-9]+\.[0-9]+\.[0-9]+)$') {
+          if ($versionHeader -notmatch '(?m)^#define QUACK_VERSION ([0-9]+\.[0-9]+\.[0-9]+)\r?$') {
             throw "Could not read QUACK_VERSION from src/version.h."
           }
           $version = $Matches[1]
