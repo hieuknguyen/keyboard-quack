@@ -668,6 +668,61 @@ static bool is_vietnamese_onset_prefix(const telex_ctx_t *ctx)
     return false;
 }
 
+/*
+ * Check whether the current vowel nucleus can still have a Vietnamese coda.
+ * This is a spelling-structure check, not a dictionary lookup. It also
+ * rejects a vowel typed after a coda, which means the current key sequence
+ * can no longer be one Vietnamese syllable.
+ */
+static bool is_valid_vietnamese_syllable_prefix(const telex_ctx_t *ctx)
+{
+    static const char *const codas[] = {
+        "c", "ch", "m", "n", "ng", "nh", "p", "t"
+    };
+    char coda[TELEX_MAX_WORD + 1];
+    int coda_len = 0;
+    bool has_vowel = false;
+    bool in_coda = false;
+
+    for (int i = 0; i < ctx->word_len; i++) {
+        const telex_token_t *token = &ctx->word[i];
+        if (token_is_vowel(token)) {
+            if (in_coda) return false;
+            has_vowel = true;
+            continue;
+        }
+
+        if (!has_vowel) continue;
+        in_coda = true;
+
+        uint32_t cp = token->literal;
+        char ch;
+        if (cp >= 'A' && cp <= 'Z') {
+            ch = (char)(cp - 'A' + 'a');
+        } else if (cp >= 'a' && cp <= 'z') {
+            ch = (char)cp;
+        } else {
+            return false;
+        }
+
+        if (coda_len >= TELEX_MAX_WORD) return false;
+        coda[coda_len++] = ch;
+    }
+
+    if (!has_vowel || coda_len == 0) return true;
+    coda[coda_len] = '\0';
+
+    /* Accept partial endings such as 'n' while the user may still type 'ng'. */
+    for (size_t i = 0; i < sizeof(codas) / sizeof(codas[0]); i++) {
+        size_t allowed_len = strlen(codas[i]);
+        if ((size_t)coda_len <= allowed_len &&
+            strncmp(codas[i], coda, (size_t)coda_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, bool is_upper)
 {
     telex_result_t r;
@@ -998,8 +1053,17 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
 
         ctx->word[ctx->word_len++] = t;
 
+        bool valid_syllable_prefix = is_valid_vietnamese_syllable_prefix(ctx);
+        if (!valid_syllable_prefix) {
+            /* Keep already-rendered Vietnamese intact; treat this key and
+             * following keys literally until the user leaves or edits the
+             * invalid continuation. */
+            ctx->shape_cancelled = true;
+            ctx->shape_cancelled_len = ctx->word_len;
+        }
+
         /* Coda tone re-evaluation within current syllable */
-        if (!token_is_vowel(&t)) {
+        if (valid_syllable_prefix && !token_is_vowel(&t)) {
             int old = -1;
             for (int i = 0; i < ctx->word_len; i++) {
                 if (ctx->word[i].tone != TONE_NONE) { old = i; break; }
