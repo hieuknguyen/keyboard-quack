@@ -485,35 +485,6 @@ static void reset_on_foreground_change(win32_capture_ctx_t *ctx)
     ctx->foreground_process_id = process_id;
 }
 
-static bool async_key_is_down(int virtual_key)
-{
-    return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
-}
-
-/* Low-level hooks can miss a modifier key-up during sleep or desktop changes.
- * Reconcile each side with Windows' physical key state, while honoring the
- * event currently being delivered (GetAsyncKeyState can lag that event). */
-static void sync_physical_modifiers(win32_capture_ctx_t *ctx, DWORD event_vk,
-                                    bool is_down)
-{
-    ctx->physical_left_ctrl = event_vk == VK_LCONTROL
-        ? is_down : async_key_is_down(VK_LCONTROL);
-    ctx->physical_right_ctrl = event_vk == VK_RCONTROL
-        ? is_down : async_key_is_down(VK_RCONTROL);
-    ctx->physical_left_shift = event_vk == VK_LSHIFT
-        ? is_down : async_key_is_down(VK_LSHIFT);
-    ctx->physical_right_shift = event_vk == VK_RSHIFT
-        ? is_down : async_key_is_down(VK_RSHIFT);
-    ctx->physical_left_alt = event_vk == VK_LMENU
-        ? is_down : async_key_is_down(VK_LMENU);
-    ctx->physical_right_alt = event_vk == VK_RMENU
-        ? is_down : async_key_is_down(VK_RMENU);
-    ctx->physical_left_win = event_vk == VK_LWIN
-        ? is_down : async_key_is_down(VK_LWIN);
-    ctx->physical_right_win = event_vk == VK_RWIN
-        ? is_down : async_key_is_down(VK_RWIN);
-}
-
 static void reset_after_power_transition(win32_capture_ctx_t *ctx)
 {
     if (!ctx) return;
@@ -1092,7 +1063,17 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     bool is_up   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
     DWORD vk = p->vkCode;
 
-    sync_physical_modifiers(g_capture_ctx, vk, is_down);
+    /* Low-level hooks run before Windows updates async key state, so keep
+     * modifier state from the key events themselves. The power-transition
+     * handler clears stale state if a key-up was missed during sleep. */
+    if (vk == VK_LCONTROL) g_capture_ctx->physical_left_ctrl = is_down;
+    else if (vk == VK_RCONTROL) g_capture_ctx->physical_right_ctrl = is_down;
+    else if (vk == VK_LSHIFT) g_capture_ctx->physical_left_shift = is_down;
+    else if (vk == VK_RSHIFT) g_capture_ctx->physical_right_shift = is_down;
+    else if (vk == VK_LMENU) g_capture_ctx->physical_left_alt = is_down;
+    else if (vk == VK_RMENU) g_capture_ctx->physical_right_alt = is_down;
+    else if (vk == VK_LWIN) g_capture_ctx->physical_left_win = is_down;
+    else if (vk == VK_RWIN) g_capture_ctx->physical_right_win = is_down;
 
     bool ctrl_down = g_capture_ctx->physical_left_ctrl ||
                      g_capture_ctx->physical_right_ctrl;
