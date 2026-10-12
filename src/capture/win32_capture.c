@@ -485,6 +485,58 @@ static void reset_on_foreground_change(win32_capture_ctx_t *ctx)
     ctx->foreground_process_id = process_id;
 }
 
+static bool async_key_is_down(int virtual_key)
+{
+    return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
+}
+
+/* Low-level hooks can miss a modifier key-up during sleep or desktop changes.
+ * Reconcile each side with Windows' physical key state, while honoring the
+ * event currently being delivered (GetAsyncKeyState can lag that event). */
+static void sync_physical_modifiers(win32_capture_ctx_t *ctx, DWORD event_vk,
+                                    bool is_down)
+{
+    ctx->physical_left_ctrl = event_vk == VK_LCONTROL
+        ? is_down : async_key_is_down(VK_LCONTROL);
+    ctx->physical_right_ctrl = event_vk == VK_RCONTROL
+        ? is_down : async_key_is_down(VK_RCONTROL);
+    ctx->physical_left_shift = event_vk == VK_LSHIFT
+        ? is_down : async_key_is_down(VK_LSHIFT);
+    ctx->physical_right_shift = event_vk == VK_RSHIFT
+        ? is_down : async_key_is_down(VK_RSHIFT);
+    ctx->physical_left_alt = event_vk == VK_LMENU
+        ? is_down : async_key_is_down(VK_LMENU);
+    ctx->physical_right_alt = event_vk == VK_RMENU
+        ? is_down : async_key_is_down(VK_RMENU);
+    ctx->physical_left_win = event_vk == VK_LWIN
+        ? is_down : async_key_is_down(VK_LWIN);
+    ctx->physical_right_win = event_vk == VK_RWIN
+        ? is_down : async_key_is_down(VK_RWIN);
+}
+
+static void reset_after_power_transition(win32_capture_ctx_t *ctx)
+{
+    if (!ctx) return;
+    telex_reset_tracking(ctx->tctx);
+    uia_invalidate_caret(ctx);
+    ctx->physical_left_ctrl = false;
+    ctx->physical_right_ctrl = false;
+    ctx->physical_left_shift = false;
+    ctx->physical_right_shift = false;
+    ctx->physical_left_alt = false;
+    ctx->physical_right_alt = false;
+    ctx->physical_left_win = false;
+    ctx->physical_right_win = false;
+    ctx->ctrl_shift_latched = 0;
+    ctx->backspace_keydown_swallowed = false;
+    ZeroMemory(ctx->letter_keydown_swallowed,
+               sizeof(ctx->letter_keydown_swallowed));
+    ZeroMemory(ctx->shortcut_keydown_swallowed,
+               sizeof(ctx->shortcut_keydown_swallowed));
+    ZeroMemory(ctx->suppress_modifier_keyup,
+               sizeof(ctx->suppress_modifier_keyup));
+}
+
 /*
  * Reconcile composition state against a recent UIA caret snapshot. UIA runs on
  * its own worker; this only copies a small snapshot while inside the key hook.
@@ -769,6 +821,14 @@ static void show_tray_menu(HWND hwnd)
 static LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT message,
                                        WPARAM wParam, LPARAM lParam)
 {
+    if (message == WM_POWERBROADCAST && g_capture_ctx) {
+        if (wParam == PBT_APMSUSPEND ||
+            wParam == PBT_APMRESUMEAUTOMATIC ||
+            wParam == PBT_APMRESUMESUSPEND) {
+            reset_after_power_transition(g_capture_ctx);
+            return TRUE;
+        }
+    }
     if (g_capture_ctx && message == QUACK_TRAY_SHORTCUT_CAPTURED) {
         close_shortcut_capture();
         quack_config_t old_config = *g_capture_ctx->config;
@@ -1032,14 +1092,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     bool is_up   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
     DWORD vk = p->vkCode;
 
-    if (vk == VK_LCONTROL) g_capture_ctx->physical_left_ctrl = is_down;
-    else if (vk == VK_RCONTROL) g_capture_ctx->physical_right_ctrl = is_down;
-    else if (vk == VK_LSHIFT) g_capture_ctx->physical_left_shift = is_down;
-    else if (vk == VK_RSHIFT) g_capture_ctx->physical_right_shift = is_down;
-    else if (vk == VK_LMENU) g_capture_ctx->physical_left_alt = is_down;
-    else if (vk == VK_RMENU) g_capture_ctx->physical_right_alt = is_down;
-    else if (vk == VK_LWIN) g_capture_ctx->physical_left_win = is_down;
-    else if (vk == VK_RWIN) g_capture_ctx->physical_right_win = is_down;
+    sync_physical_modifiers(g_capture_ctx, vk, is_down);
 
     bool ctrl_down = g_capture_ctx->physical_left_ctrl ||
                      g_capture_ctx->physical_right_ctrl;

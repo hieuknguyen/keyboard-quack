@@ -379,6 +379,7 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
     ctx->boundary_count = 0;
+    ctx->boundary_restored = false;
 }
 
 void telex_commit_word(telex_ctx_t *ctx)
@@ -405,6 +406,7 @@ void telex_commit_word(telex_ctx_t *ctx)
     ctx->shape_cancelled_len = 0;
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
+    ctx->boundary_restored = false;
 }
 
 static uint32_t token_cp(const telex_token_t *t);
@@ -439,6 +441,7 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
     }
 
     if (ctx->word_len > 0) {
+        ctx->boundary_restored = false;
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
@@ -487,6 +490,7 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         ctx->shape_cancelled_len = 0;
         ctx->undo_valid = false;
         ctx->deleted_token_valid = false;
+        ctx->boundary_restored = true;
     }
 
     /* No tracked text: let the target application handle Backspace normally. */
@@ -737,7 +741,8 @@ static bool is_valid_vietnamese_syllable_prefix(const telex_ctx_t *ctx)
     return false;
 }
 
-telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, bool is_upper)
+static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
+                                         bool pressed, bool is_upper)
 {
     telex_result_t r;
     result_init(&r);
@@ -1130,5 +1135,38 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed, b
         ctx->shape_cancelled_len = ctx->word_len;
     }
     return r;
+}
+
+telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed,
+                             bool is_upper)
+{
+    if (!pressed || !ctx->boundary_restored) {
+        return telex_process_impl(ctx, keycode, pressed, is_upper);
+    }
+
+    /* After Backspace removed a word delimiter, first give the key a chance
+     * to modify the restored word (for example, adding a tone with 's'). If
+     * it only appends a literal letter, restore the delimiter and start a new
+     * word so retyping a deleted word cannot silently join the previous one. */
+    telex_ctx_t candidate = *ctx;
+    candidate.boundary_restored = false;
+    telex_result_t candidate_result =
+        telex_process_impl(&candidate, keycode, pressed, is_upper);
+    if (candidate_result.action != ACT_OUTPUT) {
+        *ctx = candidate;
+        return candidate_result;
+    }
+
+    ctx->boundary_restored = false;
+    telex_commit_word(ctx);
+    telex_result_t result = telex_process_impl(ctx, keycode, pressed, is_upper);
+    if (result.action == ACT_OUTPUT && result.output_len > 0 &&
+        result.output_len < TELEX_MAX_OUTPUT) {
+        memmove(result.output + 1, result.output,
+                sizeof(result.output[0]) * (size_t)result.output_len);
+        result.output[0] = ' ';
+        result.output_len++;
+    }
+    return result;
 }
 
