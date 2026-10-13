@@ -1,13 +1,33 @@
 /* Integration regression test for composition state across Backspace. */
-#include <assert.h>
-#include <stdio.h>
-#include "../src/engine/unicode_map.h"
-
 /* Include the event loop with a renamed entry point so its static event
  * processor can be exercised without opening real input devices. */
 #define main keyboard_quack_daemon_main
 #include "../src/main.c"
 #undef main
+
+#include <assert.h>
+#include <stdio.h>
+#include "../src/engine/unicode_map.h"
+
+#define CAPTURED_OUTPUT_CAP 512
+static uint32_t captured_output[CAPTURED_OUTPUT_CAP];
+static int captured_output_len;
+
+static void capture_output(const uint32_t *codepoints, int len)
+{
+    for (int i = 0; codepoints && i < len &&
+                    captured_output_len < CAPTURED_OUTPUT_CAP; i++) {
+        captured_output[captured_output_len++] = codepoints[i];
+    }
+}
+
+static quack_config_t test_config;
+
+static void send_event(telex_ctx_t *telex, inject_ctx_t *inject,
+                       struct input_event *ev, bool is_mouse)
+{
+    process_event(telex, inject, &test_config, ev, is_mouse);
+}
 
 int capture_init(capture_ctx_t *ctx) { (void)ctx; return -1; }
 int capture_grab(capture_ctx_t *ctx) { (void)ctx; return -1; }
@@ -25,12 +45,12 @@ int inject_key_val(inject_ctx_t *ctx, uint16_t keycode, int val)
 int inject_unicode(inject_ctx_t *ctx, uint32_t codepoint)
 { (void)ctx; (void)codepoint; return 0; }
 int inject_string(inject_ctx_t *ctx, const uint32_t *codepoints, int len)
-{ (void)ctx; (void)codepoints; (void)len; return 0; }
+{ (void)ctx; capture_output(codepoints, len); return 0; }
 int inject_backspace(inject_ctx_t *ctx, int count)
 { (void)ctx; (void)count; return 0; }
 int inject_bksp_retype(inject_ctx_t *ctx, int count,
                        const uint32_t *codepoints, int len)
-{ (void)ctx; (void)count; (void)codepoints; (void)len; return 0; }
+{ (void)ctx; (void)count; capture_output(codepoints, len); return 0; }
 void inject_cleanup(inject_ctx_t *ctx) { (void)ctx; }
 
 int config_load(quack_config_t *cfg, const char *path)
@@ -40,15 +60,15 @@ static void send_key(telex_ctx_t *telex, inject_ctx_t *inject,
                      uint16_t code, int value)
 {
     struct input_event ev = { .type = EV_KEY, .code = code, .value = value };
-    process_event(telex, inject, &ev, false);
+    send_event(telex, inject, &ev, false);
 }
 
 static void send_mouse_click(telex_ctx_t *telex, inject_ctx_t *inject, uint16_t code)
 {
     struct input_event ev = { .type = EV_KEY, .code = code, .value = 1 };
-    process_event(telex, inject, &ev, true);
+    send_event(telex, inject, &ev, true);
     ev.value = 0;
-    process_event(telex, inject, &ev, true);
+    send_event(telex, inject, &ev, true);
 }
 
 int main(void)
@@ -165,13 +185,13 @@ int main(void)
 
     /* Hold Backspace: 1 press + 3 repeats = 4 backspaces total (deletes 'c', 'o', 'h', and the space) */
     struct input_event ev_bsp_press = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 1 };
-    process_event(&telex, &inject, &ev_bsp_press, false);
+    send_event(&telex, &inject, &ev_bsp_press, false);
     struct input_event ev_bsp_rep = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 2 };
     for (int i = 0; i < 3; i++) {
-        process_event(&telex, &inject, &ev_bsp_rep, false);
+        send_event(&telex, &inject, &ev_bsp_rep, false);
     }
     struct input_event ev_bsp_rel = { .type = EV_KEY, .code = KC_BACKSPACE, .value = 0 };
-    process_event(&telex, &inject, &ev_bsp_rel, false);
+    send_event(&telex, &inject, &ev_bsp_rel, false);
 
     /* "tooi" ("tôi") must be restored in buffer */
     assert(telex.word_len == 3);
@@ -184,11 +204,11 @@ int main(void)
     assert(telex.word[1].tone == TONE_SAC);
 
     /* Now hold Backspace to erase all of "tối" (1 press + 3 repeats = 4 backspaces) */
-    process_event(&telex, &inject, &ev_bsp_press, false);
+    send_event(&telex, &inject, &ev_bsp_press, false);
     for (int i = 0; i < 3; i++) {
-        process_event(&telex, &inject, &ev_bsp_rep, false);
+        send_event(&telex, &inject, &ev_bsp_rep, false);
     }
-    process_event(&telex, &inject, &ev_bsp_rel, false);
+    send_event(&telex, &inject, &ev_bsp_rel, false);
 
     /* Buffer must now be completely clean */
     assert(telex.word_len == 0);
@@ -223,13 +243,13 @@ int main(void)
     /* Test 8: Letter autorepeat (val == 2) */
     telex_init(&telex);
     struct input_event ev_a = { .type = EV_KEY, .code = 30, .value = 1 }; // a
-    process_event(&telex, &inject, &ev_a, false);
+    send_event(&telex, &inject, &ev_a, false);
     ev_a.value = 2; // repeat -> â
-    process_event(&telex, &inject, &ev_a, false);
+    send_event(&telex, &inject, &ev_a, false);
     assert(telex.word_len == 1 && telex.word[0].vowel_type == VH_ACI);
-    process_event(&telex, &inject, &ev_a, false); // repeat -> aa
+    send_event(&telex, &inject, &ev_a, false); // repeat -> aa
     assert(telex.word_len == 2 && telex.shape_cancelled == true);
-    process_event(&telex, &inject, &ev_a, false); // repeat -> aaa
+    send_event(&telex, &inject, &ev_a, false); // repeat -> aaa
     assert(telex.word_len == 3);
     puts("Test 8 (letter autorepeat) passed.");
 
@@ -360,6 +380,46 @@ int main(void)
     send_key(&telex, &inject, 56, 1); send_key(&telex, &inject, 56, 0); /* Alt */
     assert(telex.word_len == 0);
     puts("Test 15 (Alt/Super modifier resets tracking) passed.");
+
+    /* Test 16: Removing only a space must not silently insert it again. */
+    telex_init(&telex);
+    send_key(&telex, &inject, 20, 1); send_key(&telex, &inject, 20, 0); /* t */
+    send_key(&telex, &inject, 24, 1); send_key(&telex, &inject, 24, 0); /* o */
+    send_key(&telex, &inject, KC_SPACE, 1); send_key(&telex, &inject, KC_SPACE, 0);
+    assert(telex.boundary_count == 1 && telex.word_len == 0);
+    captured_output_len = 0;
+    send_key(&telex, &inject, KC_BACKSPACE, 1);
+    send_key(&telex, &inject, KC_BACKSPACE, 0);
+    send_key(&telex, &inject, 46, 1); send_key(&telex, &inject, 46, 0); /* c */
+    assert(captured_output_len == 1 && captured_output[0] == 'c');
+    assert(telex.word_len == 3 && telex.boundary_count == 0);
+    puts("Test 16 (deleting only a space does not reinsert it) passed.");
+
+    /* Test 17: Deleting a word and its space preserves the separator on retype. */
+    telex_init(&telex);
+    send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0); /* a */
+    send_key(&telex, &inject, KC_SPACE, 1); send_key(&telex, &inject, KC_SPACE, 0);
+    send_key(&telex, &inject, 48, 1); send_key(&telex, &inject, 48, 0); /* b */
+    send_key(&telex, &inject, KC_BACKSPACE, 1); send_key(&telex, &inject, KC_BACKSPACE, 0);
+    send_key(&telex, &inject, KC_BACKSPACE, 1); send_key(&telex, &inject, KC_BACKSPACE, 0);
+    captured_output_len = 0;
+    send_key(&telex, &inject, 46, 1); send_key(&telex, &inject, 46, 0); /* c */
+    assert(captured_output_len == 2 && captured_output[0] == ' ' &&
+           captured_output[1] == 'c');
+    puts("Test 17 (retyping a deleted word restores one separator) passed.");
+
+    /* Test 18: Backspace across consecutive spaces restores only after the last one. */
+    telex_init(&telex);
+    send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0); /* a */
+    send_key(&telex, &inject, KC_SPACE, 1); send_key(&telex, &inject, KC_SPACE, 0);
+    send_key(&telex, &inject, KC_SPACE, 1); send_key(&telex, &inject, KC_SPACE, 0);
+    assert(telex.boundary_space_counts[0] == 2);
+    send_key(&telex, &inject, KC_BACKSPACE, 1); send_key(&telex, &inject, KC_BACKSPACE, 0);
+    assert(telex.word_len == 0 && telex.boundary_count == 1 &&
+           telex.boundary_space_counts[0] == 1);
+    send_key(&telex, &inject, KC_BACKSPACE, 1); send_key(&telex, &inject, KC_BACKSPACE, 0);
+    assert(telex.word_len == 1 && telex.boundary_count == 0);
+    puts("Test 18 (consecutive spaces stay synchronized) passed.");
 
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;

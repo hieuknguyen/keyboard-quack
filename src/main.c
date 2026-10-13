@@ -75,7 +75,7 @@ static void print_usage(const char *prog)
 }
 
 #if !defined(_WIN32) && !defined(_WIN64)
-#ifndef _LINUX_INPUT_H
+#ifndef _INPUT_H
 #ifndef _INPUT_EVENT_STRUCT_DEFINED
 #define _INPUT_EVENT_STRUCT_DEFINED
 struct input_event {
