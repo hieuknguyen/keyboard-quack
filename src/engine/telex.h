@@ -52,11 +52,14 @@ typedef struct {
     int           rendered_len;
     uint32_t      rendered_cps[TELEX_MAX_WORD];
 
-    /* Boundary stack for backspacing across words safely */
+    /* Word history after spaces, including consecutive spaces per boundary. */
     telex_token_t boundary_words[TELEX_MAX_BOUNDARIES][TELEX_MAX_WORD];
     int           boundary_lens[TELEX_MAX_BOUNDARIES];
+    int           boundary_space_counts[TELEX_MAX_BOUNDARIES];
     int           boundary_count;
     bool          boundary_restored;
+    bool          boundary_reinsert_space;
+    bool          backspace_cleared_word;
 
     /* Shape cancellation (within current syllable) */
     bool          shape_cancelled;
@@ -84,7 +87,7 @@ void telex_set_enabled(telex_ctx_t *ctx, bool enabled);
 void telex_reset_tracking(telex_ctx_t *ctx);
 
 /*
- * Commit the current word to history and reset active buffer.
+ * Commit the current word at a space and reset the active buffer.
  */
 void telex_commit_word(telex_ctx_t *ctx);
 

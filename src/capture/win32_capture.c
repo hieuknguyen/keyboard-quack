@@ -1284,7 +1284,9 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     /* Non-letter keys (digits, punctuation) */
     if (vk < 'A' || vk > 'Z') {
         if (is_down) {
-            telex_commit_word(g_capture_ctx->tctx);
+            /* Only spaces are reversible boundaries; punctuation may vary by
+             * keyboard layout, so do not retain it as word history. */
+            telex_reset_tracking(g_capture_ctx->tctx);
             if (is_printable_vk(vk)) {
                 uia_note_edit(g_capture_ctx, 1, true);
             }

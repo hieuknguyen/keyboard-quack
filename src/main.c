@@ -444,7 +444,9 @@ static void process_event(telex_ctx_t *tctx, inject_ctx_t *ictx,
             }
             return;
         } else if (pressed || repeated) {
-            telex_commit_word(tctx);
+            /* Non-space delimiters are layout-dependent. Drop history so
+             * Backspace cannot mistake punctuation for a removable space. */
+            telex_reset_tracking(tctx);
         }
 
         inject_key_val(ictx, code, val);

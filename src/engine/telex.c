@@ -1,6 +1,7 @@
 #include "telex.h"
 #include "unicode_map.h"
 #include <string.h>
+#include <limits.h>
 
 /* Linux input keycodes */
 #define KEY_A 30
@@ -380,6 +381,8 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->deleted_token_valid = false;
     ctx->boundary_count = 0;
     ctx->boundary_restored = false;
+    ctx->boundary_reinsert_space = false;
+    ctx->backspace_cleared_word = false;
 }
 
 void telex_commit_word(telex_ctx_t *ctx)
@@ -389,16 +392,26 @@ void telex_commit_word(telex_ctx_t *ctx)
             int n = ctx->boundary_count;
             memcpy(ctx->boundary_words[n], ctx->word, sizeof(ctx->word[0]) * ctx->word_len);
             ctx->boundary_lens[n] = ctx->word_len;
+            ctx->boundary_space_counts[n] = 1;
             ctx->boundary_count++;
         } else {
             memmove(ctx->boundary_words, ctx->boundary_words + 1,
                     (TELEX_MAX_BOUNDARIES - 1) * sizeof(ctx->boundary_words[0]));
             memmove(ctx->boundary_lens, ctx->boundary_lens + 1,
                     (TELEX_MAX_BOUNDARIES - 1) * sizeof(ctx->boundary_lens[0]));
+            memmove(ctx->boundary_space_counts, ctx->boundary_space_counts + 1,
+                    (TELEX_MAX_BOUNDARIES - 1) * sizeof(ctx->boundary_space_counts[0]));
             int n = TELEX_MAX_BOUNDARIES - 1;
             memcpy(ctx->boundary_words[n], ctx->word, sizeof(ctx->word[0]) * ctx->word_len);
             ctx->boundary_lens[n] = ctx->word_len;
+            ctx->boundary_space_counts[n] = 1;
         }
+    } else if (ctx->boundary_count > 0) {
+        /* Preserve repeated spaces so a single Backspace cannot restore a
+         * word while another separator still remains before the caret. */
+        int n = ctx->boundary_count - 1;
+        if (ctx->boundary_space_counts[n] < INT_MAX)
+            ctx->boundary_space_counts[n]++;
     }
     ctx->word_len = 0;
     ctx->rendered_len = 0;
@@ -407,6 +420,8 @@ void telex_commit_word(telex_ctx_t *ctx)
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
     ctx->boundary_restored = false;
+    ctx->boundary_reinsert_space = false;
+    ctx->backspace_cleared_word = false;
 }
 
 static uint32_t token_cp(const telex_token_t *t);
@@ -437,11 +452,15 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
             ctx->shape_cancelled = false;
             ctx->shape_cancelled_len = 0;
         }
+        ctx->boundary_restored = false;
+        ctx->boundary_reinsert_space = false;
+        ctx->backspace_cleared_word = (ctx->word_len == 0);
         return r;
     }
 
     if (ctx->word_len > 0) {
         ctx->boundary_restored = false;
+        ctx->boundary_reinsert_space = false;
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
@@ -467,6 +486,7 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         }
 
         /* Return a screen diff so callers can keep rendered text in sync. */
+        ctx->backspace_cleared_word = (ctx->word_len == 0);
         return retype_word(ctx);
     } else if (ctx->word_len == 0 && ctx->boundary_count > 0) {
         /* Backspacing across the delimiter: restore the previous word into active buffer */
@@ -474,12 +494,18 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
             telex_reset_tracking(ctx);
             return r;
         }
-        int n = --ctx->boundary_count;
+        int n = ctx->boundary_count - 1;
         if (ctx->boundary_lens[n] <= 0 ||
-            ctx->boundary_lens[n] > TELEX_MAX_WORD) {
+            ctx->boundary_lens[n] > TELEX_MAX_WORD ||
+            ctx->boundary_space_counts[n] <= 0) {
             telex_reset_tracking(ctx);
             return r;
         }
+        if (ctx->boundary_space_counts[n] > 1) {
+            ctx->boundary_space_counts[n]--;
+            return r;
+        }
+        ctx->boundary_count = n;
         memcpy(ctx->word, ctx->boundary_words[n], sizeof(ctx->word[0]) * ctx->boundary_lens[n]);
         ctx->word_len = ctx->boundary_lens[n];
         ctx->rendered_len = ctx->word_len;
@@ -491,6 +517,10 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         ctx->undo_valid = false;
         ctx->deleted_token_valid = false;
         ctx->boundary_restored = true;
+        ctx->boundary_reinsert_space = ctx->backspace_cleared_word;
+        ctx->backspace_cleared_word = false;
+    } else {
+        ctx->backspace_cleared_word = false;
     }
 
     /* No tracked text: let the target application handle Backspace normally. */
@@ -537,7 +567,8 @@ static bool tracking_is_consistent(const telex_ctx_t *ctx)
     }
     for (int i = 0; i < ctx->boundary_count; i++) {
         if (ctx->boundary_lens[i] < 0 ||
-            ctx->boundary_lens[i] > TELEX_MAX_WORD) {
+            ctx->boundary_lens[i] > TELEX_MAX_WORD ||
+            ctx->boundary_space_counts[i] <= 0) {
             return false;
         }
     }
@@ -747,12 +778,14 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
     telex_result_t r;
     result_init(&r);
     if (!pressed) return r;
+    ctx->backspace_cleared_word = false;
+    ctx->boundary_reinsert_space = false;
     if (!tracking_is_consistent(ctx)) {
         telex_reset_tracking(ctx);
     }
     char ch = keycode_to_char(keycode);
     if (!ch) {
-        telex_commit_word(ctx);
+        telex_reset_tracking(ctx);
         return r;
     }
 
@@ -1144,12 +1177,19 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed,
         return telex_process_impl(ctx, keycode, pressed, is_upper);
     }
 
-    /* After Backspace removed a word delimiter, first give the key a chance
-     * to modify the restored word (for example, adding a tone with 's'). If
-     * it only appends a literal letter, restore the delimiter and start a new
-     * word so retyping a deleted word cannot silently join the previous one. */
+    /* If Backspace erased only a space, the text is now contiguous and the
+     * next key must not synthesize that space again. If a whole word was also
+     * erased, retain the existing word-retype behavior. */
+    bool reinsert_space = ctx->boundary_reinsert_space;
+    ctx->boundary_restored = false;
+    ctx->boundary_reinsert_space = false;
+    if (!reinsert_space) {
+        return telex_process_impl(ctx, keycode, pressed, is_upper);
+    }
+
+    /* A Telex modifier can intentionally edit the restored word (e.g. adding
+     * a tone). Literal input starts a new word and restores its separator. */
     telex_ctx_t candidate = *ctx;
-    candidate.boundary_restored = false;
     telex_result_t candidate_result =
         telex_process_impl(&candidate, keycode, pressed, is_upper);
     if (candidate_result.action != ACT_OUTPUT) {
@@ -1157,7 +1197,6 @@ telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed,
         return candidate_result;
     }
 
-    ctx->boundary_restored = false;
     telex_commit_word(ctx);
     telex_result_t result = telex_process_impl(ctx, keycode, pressed, is_upper);
     if (result.action == ACT_OUTPUT && result.output_len > 0 &&
