@@ -395,7 +395,7 @@ int main(void)
     assert(telex.word_len == 3 && telex.boundary_count == 0);
     puts("Test 16 (deleting only a space does not reinsert it) passed.");
 
-    /* Test 17: Deleting a word and its space preserves the separator on retype. */
+    /* Test 17: Deleting a word and its separator keeps the separator deleted. */
     telex_init(&telex);
     send_key(&telex, &inject, 30, 1); send_key(&telex, &inject, 30, 0); /* a */
     send_key(&telex, &inject, KC_SPACE, 1); send_key(&telex, &inject, KC_SPACE, 0);
@@ -404,9 +404,9 @@ int main(void)
     send_key(&telex, &inject, KC_BACKSPACE, 1); send_key(&telex, &inject, KC_BACKSPACE, 0);
     captured_output_len = 0;
     send_key(&telex, &inject, 46, 1); send_key(&telex, &inject, 46, 0); /* c */
-    assert(captured_output_len == 2 && captured_output[0] == ' ' &&
-           captured_output[1] == 'c');
-    puts("Test 17 (retyping a deleted word restores one separator) passed.");
+    assert(captured_output_len == 1 && captured_output[0] == 'c');
+    assert(telex.word_len == 2 && telex.boundary_count == 0);
+    puts("Test 17 (retyping after deleting the separator does not add it back) passed.");
 
     /* Test 18: Backspace across consecutive spaces restores only after the last one. */
     telex_init(&telex);

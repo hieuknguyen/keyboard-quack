@@ -57,9 +57,6 @@ typedef struct {
     int           boundary_lens[TELEX_MAX_BOUNDARIES];
     int           boundary_space_counts[TELEX_MAX_BOUNDARIES];
     int           boundary_count;
-    bool          boundary_restored;
-    bool          boundary_reinsert_space;
-    bool          backspace_cleared_word;
 
     /* Shape cancellation (within current syllable) */
     bool          shape_cancelled;

@@ -10,18 +10,24 @@ where windres >nul 2>nul || goto :missing_tools
 if not exist build-windows mkdir build-windows
 if not exist build-windows\installer-payload mkdir build-windows\installer-payload
 
-echo [1/3] Building installed application payload...
+echo [1/4] Running Windows keyboard-hook regression tests...
+gcc -Wall -Wextra -O2 -std=c11 -Isrc -o build-windows\test-win32-capture-hook.exe tests\test_win32_capture_hook.c src\capture\win32_uia.c src\windows\win_update.c src\engine\telex.c src\platform\platform.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt
+if errorlevel 1 goto :failed
+build-windows\test-win32-capture-hook.exe
+if errorlevel 1 goto :failed
+
+echo [2/4] Building installed application payload...
 gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc -o build-windows\installer-payload\quack.exe src\main.c src\platform\platform.c src\engine\telex.c src\capture\win32_capture.c src\capture\win32_uia.c src\windows\win_update.c src\inject\win32_inject.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt
 if errorlevel 1 goto :failed
 
 gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc\windows -o build-windows\installer-payload\uninstall.exe src\windows\uninstaller.c -luser32 -lshell32 -ladvapi32
 if errorlevel 1 goto :failed
 
-echo [2/3] Embedding application and uninstaller...
+echo [3/4] Embedding application and uninstaller...
 windres -Isrc\windows -i src\windows\installer_resources.rc -o build-windows\installer_resources.o
 if errorlevel 1 goto :failed
 
-echo [3/3] Building self-contained setup application...
+echo [4/4] Building self-contained setup application...
 gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc\windows -o build-windows\keyboard-quack-setup.exe src\windows\installer.c build-windows\installer_resources.o -luser32 -lshell32 -ladvapi32 -lole32 -loleaut32 -luuid
 if errorlevel 1 goto :failed
 

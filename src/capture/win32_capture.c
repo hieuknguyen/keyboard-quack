@@ -943,6 +943,16 @@ static bool is_control_or_shift_vk(DWORD vk)
            vk == VK_RCONTROL;
 }
 
+static bool configured_shortcut_uses_ctrl_shift(const quack_config_t *config)
+{
+    const uint8_t ctrl_shift = QUACK_SHORTCUT_MOD_CTRL |
+                               QUACK_SHORTCUT_MOD_SHIFT;
+    if (!config) return false;
+    if (config->toggle_key == QUACK_TOGGLE_CTRL_SHIFT) return true;
+    return config->toggle_key == QUACK_TOGGLE_CUSTOM &&
+           (config->toggle_custom_modifiers & ctrl_shift) == ctrl_shift;
+}
+
 static bool is_modifier_vk(DWORD vk)
 {
     return is_control_or_shift_vk(vk) || vk == VK_LMENU || vk == VK_RMENU ||
@@ -1155,45 +1165,48 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         }
     }
 
-    /* Keep Windows' default layout-switch shortcut from changing the input
-     * language. Legacy Ctrl+Shift settings still work; custom shortcuts with
-     * Ctrl+Shift use their final key below. */
+    /* Consume Ctrl+Shift only when the app owns that chord. Otherwise pass it
+     * through so Windows shortcuts such as Ctrl+Shift+Esc keep working. */
     if (is_control_or_shift_vk(vk)) {
         if (is_down && ctrl_down && shift_down) {
+            bool app_owns_chord = configured_shortcut_uses_ctrl_shift(
+                g_capture_ctx->config);
             if (!g_capture_ctx->ctrl_shift_latched) {
                 if (g_capture_ctx->config->toggle_key == QUACK_TOGGLE_CTRL_SHIFT)
                     toggle_from_shortcut(g_capture_ctx);
-                else if (g_capture_ctx->config->toggle_key != QUACK_TOGGLE_CUSTOM ||
-                         (g_capture_ctx->config->toggle_custom_modifiers &
-                          (QUACK_SHORTCUT_MOD_CTRL | QUACK_SHORTCUT_MOD_SHIFT)) !=
-                             (QUACK_SHORTCUT_MOD_CTRL | QUACK_SHORTCUT_MOD_SHIFT)) {
+                else if (!app_owns_chord) {
                     telex_reset_tracking(g_capture_ctx->tctx);
                     uia_invalidate_caret(g_capture_ctx);
                 }
                 g_capture_ctx->ctrl_shift_latched = 1;
             }
-            if (vk < 256) g_capture_ctx->suppress_modifier_keyup[vk] = true;
-            return 1;
+            if (app_owns_chord) {
+                if (vk < 256)
+                    g_capture_ctx->suppress_modifier_keyup[vk] = true;
+                return 1;
+            }
         }
         if (is_up && !ctrl_down && !shift_down)
             g_capture_ctx->ctrl_shift_latched = 0;
         return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
     }
 
-    /* Windows reserves Win+Space for keyboard-layout changes. Swallow it
-     * while the app is running; if selected, use it for the app toggle. */
+    /* Leave Windows' Win+Space layout shortcut available unless the app owns
+     * this exact chord. */
     if (vk == VK_SPACE && win_down) {
         if (is_down && configured_shortcut_matches(
                 g_capture_ctx->config, vk, ctrl_down, shift_down,
                 alt_down, win_down)) {
             toggle_from_shortcut(g_capture_ctx);
-        } else if (is_down) {
+            if (vk < 256)
+                g_capture_ctx->shortcut_keydown_swallowed[vk] = true;
+            return 1;
+        }
+        if (is_down) {
             telex_reset_tracking(g_capture_ctx->tctx);
             uia_invalidate_caret(g_capture_ctx);
         }
-        if (vk < 256 && is_down)
-            g_capture_ctx->shortcut_keydown_swallowed[vk] = true;
-        return 1;
+        return CallNextHookEx(g_capture_ctx->hook, nCode, wParam, lParam);
     }
 
     if (is_down && configured_shortcut_matches(

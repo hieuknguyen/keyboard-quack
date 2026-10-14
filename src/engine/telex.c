@@ -380,9 +380,6 @@ void telex_reset_tracking(telex_ctx_t *ctx)
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
     ctx->boundary_count = 0;
-    ctx->boundary_restored = false;
-    ctx->boundary_reinsert_space = false;
-    ctx->backspace_cleared_word = false;
 }
 
 void telex_commit_word(telex_ctx_t *ctx)
@@ -419,9 +416,6 @@ void telex_commit_word(telex_ctx_t *ctx)
     ctx->shape_cancelled_len = 0;
     ctx->undo_valid = false;
     ctx->deleted_token_valid = false;
-    ctx->boundary_restored = false;
-    ctx->boundary_reinsert_space = false;
-    ctx->backspace_cleared_word = false;
 }
 
 static uint32_t token_cp(const telex_token_t *t);
@@ -452,15 +446,10 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
             ctx->shape_cancelled = false;
             ctx->shape_cancelled_len = 0;
         }
-        ctx->boundary_restored = false;
-        ctx->boundary_reinsert_space = false;
-        ctx->backspace_cleared_word = (ctx->word_len == 0);
         return r;
     }
 
     if (ctx->word_len > 0) {
-        ctx->boundary_restored = false;
-        ctx->boundary_reinsert_space = false;
         ctx->deleted_token = ctx->word[ctx->word_len - 1];
         ctx->deleted_token_valid = true;
         ctx->word_len--;
@@ -486,7 +475,6 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         }
 
         /* Return a screen diff so callers can keep rendered text in sync. */
-        ctx->backspace_cleared_word = (ctx->word_len == 0);
         return retype_word(ctx);
     } else if (ctx->word_len == 0 && ctx->boundary_count > 0) {
         /* Backspacing across the delimiter: restore the previous word into active buffer */
@@ -516,11 +504,6 @@ telex_result_t telex_handle_backspace(telex_ctx_t *ctx)
         ctx->shape_cancelled_len = 0;
         ctx->undo_valid = false;
         ctx->deleted_token_valid = false;
-        ctx->boundary_restored = true;
-        ctx->boundary_reinsert_space = ctx->backspace_cleared_word;
-        ctx->backspace_cleared_word = false;
-    } else {
-        ctx->backspace_cleared_word = false;
     }
 
     /* No tracked text: let the target application handle Backspace normally. */
@@ -778,8 +761,6 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
     telex_result_t r;
     result_init(&r);
     if (!pressed) return r;
-    ctx->backspace_cleared_word = false;
-    ctx->boundary_reinsert_space = false;
     if (!tracking_is_consistent(ctx)) {
         telex_reset_tracking(ctx);
     }
@@ -1173,39 +1154,6 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
 telex_result_t telex_process(telex_ctx_t *ctx, uint16_t keycode, bool pressed,
                              bool is_upper)
 {
-    if (!pressed || !ctx->boundary_restored) {
-        return telex_process_impl(ctx, keycode, pressed, is_upper);
-    }
-
-    /* If Backspace erased only a space, the text is now contiguous and the
-     * next key must not synthesize that space again. If a whole word was also
-     * erased, retain the existing word-retype behavior. */
-    bool reinsert_space = ctx->boundary_reinsert_space;
-    ctx->boundary_restored = false;
-    ctx->boundary_reinsert_space = false;
-    if (!reinsert_space) {
-        return telex_process_impl(ctx, keycode, pressed, is_upper);
-    }
-
-    /* A Telex modifier can intentionally edit the restored word (e.g. adding
-     * a tone). Literal input starts a new word and restores its separator. */
-    telex_ctx_t candidate = *ctx;
-    telex_result_t candidate_result =
-        telex_process_impl(&candidate, keycode, pressed, is_upper);
-    if (candidate_result.action != ACT_OUTPUT) {
-        *ctx = candidate;
-        return candidate_result;
-    }
-
-    telex_commit_word(ctx);
-    telex_result_t result = telex_process_impl(ctx, keycode, pressed, is_upper);
-    if (result.action == ACT_OUTPUT && result.output_len > 0 &&
-        result.output_len < TELEX_MAX_OUTPUT) {
-        memmove(result.output + 1, result.output,
-                sizeof(result.output[0]) * (size_t)result.output_len);
-        result.output[0] = ' ';
-        result.output_len++;
-    }
-    return result;
+    return telex_process_impl(ctx, keycode, pressed, is_upper);
 }
 
