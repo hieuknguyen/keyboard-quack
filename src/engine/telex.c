@@ -974,6 +974,18 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
             return retype_word(ctx);
         }
 
+        /* w switches â -> ă and ô -> ơ when already circumflexed. */
+        for (int i = ctx->word_len - 1; i >= 0; i--) {
+            if (ctx->word[i].vowel_type == VH_ACI) {
+                ctx->word[i].vowel_type = VH_ACR;
+                return retype_word(ctx);
+            }
+            if (ctx->word[i].vowel_type == VH_OCI) {
+                ctx->word[i].vowel_type = VH_OHR;
+                return retype_word(ctx);
+            }
+        }
+
         for (int i = ctx->word_len - 1; i >= 0; i--) {
             if (!token_is_vowel(&ctx->word[i])) continue;
             if (ctx->word[i].vowel_type == VH_U && i > 0 &&
@@ -1040,6 +1052,18 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
                                 keycode == KEY_E ? VH_ECI : VH_OCI;
             vn_vowel_t plain = keycode == KEY_A ? VH_A :
                                keycode == KEY_E ? VH_E : VH_O;
+            if (ctx->word_len > 0) {
+                vn_vowel_t *last_type =
+                    &ctx->word[ctx->word_len - 1].vowel_type;
+                if (keycode == KEY_A && *last_type == VH_ACR) {
+                    *last_type = VH_ACI;
+                    return retype_word(ctx);
+                }
+                if (keycode == KEY_O && *last_type == VH_OHR) {
+                    *last_type = VH_OCI;
+                    return retype_word(ctx);
+                }
+            }
             for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == marked) {
                     ctx->word[i].vowel_type = plain;

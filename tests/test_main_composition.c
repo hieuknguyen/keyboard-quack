@@ -472,6 +472,76 @@ int main(void)
     }
     puts("Tests 19-21 (uuw -> lưu, uôw -> ươ, qu glide preserved) passed.");
 
+    /* Test 22: w changes â to ă instead of becoming a literal w. */
+    telex_init(&telex);
+    const uint16_t keys22[] = { 30, 30, 17 }; /* a a w */
+    for (size_t i = 0; i < sizeof(keys22) / sizeof(keys22[0]); i++) {
+        send_key(&telex, &inject, keys22[i], 1);
+        send_key(&telex, &inject, keys22[i], 0);
+    }
+    bool aa_w_ok = telex.word_len == 1 &&
+                   telex.word[0].vowel_type == VH_ACR &&
+                   telex.rendered_cps[0] == 0x0103;
+
+    /* Test 23: a after ă switches it to â. */
+    telex_init(&telex);
+    const uint16_t keys23[] = { 30, 17, 30 }; /* a w a */
+    for (size_t i = 0; i < sizeof(keys23) / sizeof(keys23[0]); i++) {
+        send_key(&telex, &inject, keys23[i], 1);
+        send_key(&telex, &inject, keys23[i], 0);
+    }
+    bool aw_a_ok = telex.word_len == 1 &&
+                   telex.word[0].vowel_type == VH_ACI &&
+                   telex.rendered_cps[0] == 0x00E2;
+    if (!aa_w_ok || !aw_a_ok) {
+        fprintf(stderr, "a/w shape conversion failed (aaw=%s, awa=%s).\n",
+                aa_w_ok ? "ok" : "wrong", aw_a_ok ? "ok" : "wrong");
+        return 1;
+    }
+    puts("Tests 22-23 (aaw -> ă and awa -> â) passed.");
+
+    /* Test 24: w after ê remains a literal w; only â switches to ă. */
+    telex_init(&telex);
+    const uint16_t keys24[] = { 18, 18, 17 }; /* e e w */
+    for (size_t i = 0; i < sizeof(keys24) / sizeof(keys24[0]); i++) {
+        send_key(&telex, &inject, keys24[i], 1);
+        send_key(&telex, &inject, keys24[i], 0);
+    }
+    if (telex.word_len != 2 || telex.rendered_cps[0] != 0x00EA ||
+        telex.rendered_cps[1] != 'w') {
+        fprintf(stderr, "eew should produce êw, got %u tokens.\n",
+                telex.word_len);
+        return 1;
+    }
+    puts("Test 24 (eew -> êw) passed.");
+
+    /* Test 25: w switches ô to ơ, and a following o switches back to ô. */
+    telex_init(&telex);
+    const uint16_t keys25[] = { 24, 24, 17 }; /* o o w */
+    for (size_t i = 0; i < sizeof(keys25) / sizeof(keys25[0]); i++) {
+        send_key(&telex, &inject, keys25[i], 1);
+        send_key(&telex, &inject, keys25[i], 0);
+    }
+    bool oo_w_ok = telex.word_len == 1 &&
+                   telex.word[0].vowel_type == VH_OHR &&
+                   telex.rendered_cps[0] == 0x01A1;
+
+    telex_init(&telex);
+    const uint16_t keys26[] = { 24, 17, 24 }; /* o w o */
+    for (size_t i = 0; i < sizeof(keys26) / sizeof(keys26[0]); i++) {
+        send_key(&telex, &inject, keys26[i], 1);
+        send_key(&telex, &inject, keys26[i], 0);
+    }
+    bool owo_ok = telex.word_len == 1 &&
+                  telex.word[0].vowel_type == VH_OCI &&
+                  telex.rendered_cps[0] == 0x00F4;
+    if (!oo_w_ok || !owo_ok) {
+        fprintf(stderr, "o/w shape conversion failed (oow=%s, owo=%s).\n",
+                oo_w_ok ? "ok" : "wrong", owo_ok ? "ok" : "wrong");
+        return 1;
+    }
+    puts("Tests 25-26 (oow -> ơ and owo -> ô) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }

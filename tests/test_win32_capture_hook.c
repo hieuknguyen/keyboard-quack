@@ -183,6 +183,58 @@ int main(void)
     }
     puts("uôw produces ươ.");
 
+    /* w changes â to ă instead of producing a literal w. */
+    reset_text_and_composition(&telex);
+    type_vk('A');
+    type_vk('A');
+    type_vk('W');
+    if (wcscmp(screen_text, L"\u0103") != 0) {
+        fwprintf(stderr, L"aaw should produce ă, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("aaw produces ă.");
+
+    /* Repeating a after ă switches it to â. */
+    reset_text_and_composition(&telex);
+    type_vk('A');
+    type_vk('W');
+    type_vk('A');
+    if (wcscmp(screen_text, L"\u00e2") != 0) {
+        fwprintf(stderr, L"awa should produce â, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("awa produces â.");
+
+    /* w after ê remains literal, rather than changing or swallowing it. */
+    reset_text_and_composition(&telex);
+    type_vk('E');
+    type_vk('E');
+    type_vk('W');
+    if (wcscmp(screen_text, L"\u00eaw") != 0) {
+        fwprintf(stderr, L"eew should produce êw, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("eew produces êw.");
+
+    /* w changes ô to ơ; o changes it back to ô. */
+    reset_text_and_composition(&telex);
+    type_vk('O');
+    type_vk('O');
+    type_vk('W');
+    if (wcscmp(screen_text, L"\u01a1") != 0) {
+        fwprintf(stderr, L"oow should produce ơ, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    reset_text_and_composition(&telex);
+    type_vk('O');
+    type_vk('W');
+    type_vk('O');
+    if (wcscmp(screen_text, L"\u00f4") != 0) {
+        fwprintf(stderr, L"owo should produce ô, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("oow produces ơ and owo produces ô.");
+
     /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
     reset_text_and_composition(&telex);
     send_vk(VK_LWIN, true);
