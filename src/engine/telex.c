@@ -1066,6 +1066,10 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
                     return retype_word(ctx);
                 }
                 if (keycode == KEY_O && vowel_type == VH_OHR) {
+                    /* Reverse uo+w -> ươ as the paired shape operation. */
+                    if (i > 0 && ctx->word[i - 1].vowel_type == VH_UHR) {
+                        ctx->word[i - 1].vowel_type = VH_U;
+                    }
                     ctx->word[i].vowel_type = VH_OCI;
                     return retype_word(ctx);
                 }

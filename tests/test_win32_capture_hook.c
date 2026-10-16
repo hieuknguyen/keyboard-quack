@@ -273,6 +273,18 @@ int main(void)
     }
     puts("owio produces ôi.");
 
+    /* o after ươ restores the u while changing ơ to ô. */
+    reset_text_and_composition(&telex);
+    type_vk('U');
+    type_vk('O');
+    type_vk('W');
+    type_vk('O');
+    if (wcscmp(screen_text, L"u\u00f4") != 0) {
+        fwprintf(stderr, L"uowo should produce uô, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("uowo produces uô.");
+
     /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
     reset_text_and_composition(&telex);
     send_vk(VK_LWIN, true);

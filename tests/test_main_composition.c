@@ -589,6 +589,22 @@ int main(void)
     }
     puts("Test 29 (owio -> ôi) passed.");
 
+    /* Test 30: o after the reshaped uo pair restores u and keeps ô. */
+    telex_init(&telex);
+    const uint16_t keys30[] = { 22, 24, 17, 24 }; /* u o w o */
+    for (size_t i = 0; i < sizeof(keys30) / sizeof(keys30[0]); i++) {
+        send_key(&telex, &inject, keys30[i], 1);
+        send_key(&telex, &inject, keys30[i], 0);
+    }
+    if (telex.word_len != 2 || telex.word[0].vowel_type != VH_U ||
+        telex.word[1].vowel_type != VH_OCI ||
+        telex.rendered_cps[0] != 'u' || telex.rendered_cps[1] != 0x00F4) {
+        fprintf(stderr, "uowo should produce uô, got codepoints %x %x.\n",
+                telex.rendered_cps[0], telex.rendered_cps[1]);
+        return 1;
+    }
+    puts("Test 30 (uowo -> uô) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }
