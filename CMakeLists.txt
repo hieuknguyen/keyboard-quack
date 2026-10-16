@@ -65,7 +65,7 @@ if(WIN32)
     add_executable(quack WIN32
         src/main.c
     )
-    target_link_libraries(quack PRIVATE telex_engine capture inject config user32 shell32 advapi32 uiautomationcore ole32 oleaut32 uuid winhttp bcrypt)
+    target_link_libraries(quack PRIVATE telex_engine capture inject config user32 shell32 advapi32 uiautomationcore ole32 oleaut32 uuid winhttp bcrypt wtsapi32)
 else()
     add_executable(quack
         src/main.c

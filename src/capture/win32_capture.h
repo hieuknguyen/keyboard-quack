@@ -17,6 +17,7 @@ typedef struct {
     DWORD              thread_id;
     HWND               tray_window;
     HWND               shortcut_dialog;
+    bool               session_notifications_registered;
     NOTIFYICONDATAA    tray_icon_data;
     telex_ctx_t       *tctx;
     win32_inject_ctx_t *ictx;

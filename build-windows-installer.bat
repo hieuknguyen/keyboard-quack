@@ -11,13 +11,13 @@ if not exist build-windows mkdir build-windows
 if not exist build-windows\installer-payload mkdir build-windows\installer-payload
 
 echo [1/4] Running Windows keyboard-hook regression tests...
-gcc -Wall -Wextra -O2 -std=c11 -Isrc -o build-windows\test-win32-capture-hook.exe tests\test_win32_capture_hook.c src\capture\win32_uia.c src\windows\win_update.c src\engine\telex.c src\platform\platform.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt
+gcc -Wall -Wextra -O2 -std=c11 -Isrc -o build-windows\test-win32-capture-hook.exe tests\test_win32_capture_hook.c src\capture\win32_uia.c src\windows\win_update.c src\engine\telex.c src\platform\platform.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt -lwtsapi32
 if errorlevel 1 goto :failed
 build-windows\test-win32-capture-hook.exe
 if errorlevel 1 goto :failed
 
 echo [2/4] Building installed application payload...
-gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc -o build-windows\installer-payload\quack.exe src\main.c src\platform\platform.c src\engine\telex.c src\capture\win32_capture.c src\capture\win32_uia.c src\windows\win_update.c src\inject\win32_inject.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt
+gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc -o build-windows\installer-payload\quack.exe src\main.c src\platform\platform.c src\engine\telex.c src\capture\win32_capture.c src\capture\win32_uia.c src\windows\win_update.c src\inject\win32_inject.c src\config\config.c -luser32 -lshell32 -ladvapi32 -luiautomationcore -lole32 -loleaut32 -luuid -lwinhttp -lbcrypt -lwtsapi32
 if errorlevel 1 goto :failed
 
 gcc -Wall -Wextra -O2 -std=c11 -mwindows -Isrc\windows -o build-windows\installer-payload\uninstall.exe src\windows\uninstaller.c -luser32 -lshell32 -ladvapi32

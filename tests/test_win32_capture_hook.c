@@ -2,6 +2,7 @@
 #include "../src/capture/win32_capture.c"
 #include <stdio.h>
 #include <wchar.h>
+#include <wtsapi32.h>
 
 static WCHAR screen_text[256];
 static int screen_length;
@@ -157,5 +158,41 @@ int main(void)
         return 1;
     }
     puts("Existing space remains when only the word is deleted.");
+
+    /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
+    reset_text_and_composition(&telex);
+    send_vk(VK_LWIN, true);
+    send_vk('L', true);
+    send_vk('L', false);
+    ctx.physical_right_ctrl = true;
+    ctx.physical_left_shift = true;
+    ctx.physical_left_alt = true;
+    ctx.physical_right_win = true;
+    ctx.ctrl_shift_latched = 1;
+    ctx.backspace_keydown_swallowed = true;
+    ctx.letter_keydown_swallowed[0] = true;
+    ctx.shortcut_keydown_swallowed[VK_ESCAPE] = true;
+    ctx.suppress_modifier_keyup[VK_LWIN] = true;
+
+    TrayWindowProc(NULL, WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK, 0);
+    if (ctx.physical_left_win || ctx.physical_right_win ||
+        ctx.physical_right_ctrl || ctx.physical_left_shift ||
+        ctx.physical_left_alt || ctx.ctrl_shift_latched != 0 ||
+        ctx.backspace_keydown_swallowed ||
+        ctx.letter_keydown_swallowed[0] ||
+        ctx.shortcut_keydown_swallowed[VK_ESCAPE] ||
+        ctx.suppress_modifier_keyup[VK_LWIN]) {
+        fputs("Session lock did not clear stale keyboard state.\n", stderr);
+        return 1;
+    }
+
+    ctx.physical_left_win = true;
+    TrayWindowProc(NULL, WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK, 0);
+    if (ctx.physical_left_win || send_vk('A', true) != 1) {
+        fputs("Vietnamese processing did not resume after session unlock.\n",
+              stderr);
+        return 1;
+    }
+    puts("Win+L session transitions clear stale key state and resume Telex.");
     return 0;
 }

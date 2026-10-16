@@ -62,7 +62,7 @@ Chạy `quack.exe` trong thư mục `build-windows\Release` (Visual Studio) ho�
 
 Trong menu khay hệ thống, chọn **Check for updates** để kiểm tra GitHub Releases của repo `hieuknguyen/keyboard-quack`. Tính năng cập nhật trong ứng dụng dành cho bản đã cài; nếu có phiên bản mới, ứng dụng tải `keyboard-quack-setup.exe`, xác minh SHA-256 rồi mở bộ cài để nâng cấp. Khi phát hành bản mới, chỉ cần đổi `QUACK_VERSION` trong `src/version.h`, rồi push tag `vMAJOR.MINOR.PATCH` khớp với giá trị đó. CMake, ứng dụng và installer tự đọc cùng phiên bản này; workflow `.github/workflows/windows-release.yml` kiểm tra tag rồi tự build setup và tạo GitHub Release.
 
-Trên Windows, ứng dụng xóa trạng thái Telex khi chuyển cửa sổ ứng dụng hoặc khi click chuột, phòng trường hợp vị trí con trỏ/vùng chọn đã đổi. UI Automation đồng bộ thêm vị trí con trỏ và vùng chọn khi control cung cấp `TextPattern2`; control không hỗ trợ thông tin này vẫn dùng theo dõi phím làm phương án dự phòng. Phím điều hướng cũng xóa trạng thái Telex cũ để tránh Backspace sửa nhầm chữ ở vị trí trước đó.
+Trên Windows, ứng dụng xóa trạng thái Telex khi chuyển cửa sổ ứng dụng, click chuột, hoặc khóa/mở khóa phiên Windows, phòng trường hợp vị trí con trỏ/vùng chọn đã đổi hay hệ thống không gửi đủ sự kiện nhả phím. UI Automation đồng bộ thêm vị trí con trỏ và vùng chọn khi control cung cấp `TextPattern2`; control không hỗ trợ thông tin này vẫn dùng theo dõi phím làm phương án dự phòng. Phím điều hướng cũng xóa trạng thái Telex cũ để tránh Backspace sửa nhầm chữ ở vị trí trước đó.
 
 ---
 

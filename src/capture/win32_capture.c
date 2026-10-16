@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <wtsapi32.h>
 
 #include "../windows/installer_common.h"
 #include "../windows/win_update.h"
@@ -485,7 +486,7 @@ static void reset_on_foreground_change(win32_capture_ctx_t *ctx)
     ctx->foreground_process_id = process_id;
 }
 
-static void reset_after_power_transition(win32_capture_ctx_t *ctx)
+static void reset_input_state(win32_capture_ctx_t *ctx)
 {
     if (!ctx) return;
     telex_reset_tracking(ctx->tctx);
@@ -796,9 +797,14 @@ static LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT message,
         if (wParam == PBT_APMSUSPEND ||
             wParam == PBT_APMRESUMEAUTOMATIC ||
             wParam == PBT_APMRESUMESUSPEND) {
-            reset_after_power_transition(g_capture_ctx);
+            reset_input_state(g_capture_ctx);
             return TRUE;
         }
+    }
+    if (message == WM_WTSSESSION_CHANGE && g_capture_ctx &&
+        (wParam == WTS_SESSION_LOCK || wParam == WTS_SESSION_UNLOCK)) {
+        reset_input_state(g_capture_ctx);
+        return 0;
     }
     if (g_capture_ctx && message == QUACK_TRAY_SHORTCUT_CAPTURED) {
         close_shortcut_capture();
@@ -881,6 +887,14 @@ static int create_tray_icon(win32_capture_ctx_t *ctx)
     }
 
     ctx->tray_icon_visible = true;
+    if (WTSRegisterSessionNotification(ctx->tray_window,
+                                       NOTIFY_FOR_THIS_SESSION)) {
+        ctx->session_notifications_registered = true;
+    } else {
+        fprintf(stderr,
+                "[capture] Could not register for Windows session changes: error %lu\n",
+                GetLastError());
+    }
     return 0;
 }
 
@@ -1482,6 +1496,10 @@ void win32_capture_cleanup(win32_capture_ctx_t *ctx)
         ctx->tray_icon_visible = false;
     }
     if (ctx->tray_window) {
+        if (ctx->session_notifications_registered) {
+            WTSUnRegisterSessionNotification(ctx->tray_window);
+            ctx->session_notifications_registered = false;
+        }
         DestroyWindow(ctx->tray_window);
         ctx->tray_window = NULL;
         UnregisterClassA(QUACK_WINDOW_CLASS, GetModuleHandleA(NULL));
