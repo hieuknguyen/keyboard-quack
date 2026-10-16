@@ -159,6 +159,30 @@ int main(void)
     }
     puts("Existing space remains when only the word is deleted.");
 
+    /* Repeated u plus w places the horn on the first u: luuw -> lưu. */
+    reset_text_and_composition(&telex);
+    type_vk('L');
+    type_vk('U');
+    type_vk('U');
+    type_vk('W');
+    if (wcscmp(screen_text, L"l\u01b0u") != 0) {
+        fwprintf(stderr, L"luuw should produce lưu, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("luuw produces lưu.");
+
+    /* uô plus w reshapes both vowels to ươ. */
+    reset_text_and_composition(&telex);
+    type_vk('U');
+    type_vk('O');
+    type_vk('O');
+    type_vk('W');
+    if (wcscmp(screen_text, L"\u01b0\u01a1") != 0) {
+        fwprintf(stderr, L"uôw should produce ươ, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("uôw produces ươ.");
+
     /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
     reset_text_and_composition(&telex);
     send_vk(VK_LWIN, true);

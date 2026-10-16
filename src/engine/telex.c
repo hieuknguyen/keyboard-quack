@@ -929,10 +929,27 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
             return retype_word(ctx);
         }
 
-        /* 2. uo + w -> ươ (or qu + o + w -> quơ) */
+        /* uu + w -> ư u (e.g. huuw -> hưu). Keep q's u as the glide. */
+        int last = ctx->word_len - 1;
+        if (last >= 1 &&
+            ctx->word[last].vowel_type == VH_U &&
+            ctx->word[last - 1].vowel_type == VH_U) {
+            int first_u = last - 1;
+            bool is_qu_glide = first_u > 0 &&
+                ctx->word[first_u - 1].vowel_type == VH_NONE &&
+                (ctx->word[first_u - 1].literal == 'q' ||
+                 ctx->word[first_u - 1].literal == 'Q');
+            if (!is_qu_glide) {
+                ctx->word[first_u].vowel_type = VH_UHR;
+                return retype_word(ctx);
+            }
+        }
+
+        /* 2. uo/uô + w -> ươ (or qu + o + w -> quơ) */
         int oi = -1, ui = -1;
         for (int i = ctx->word_len - 1; i >= 0; i--) {
-            if (ctx->word[i].vowel_type == VH_O && oi < 0) oi = i;
+            if ((ctx->word[i].vowel_type == VH_O ||
+                 ctx->word[i].vowel_type == VH_OCI) && oi < 0) oi = i;
             else if (ctx->word[i].vowel_type == VH_U && oi >= 0) { ui = i; break; }
         }
         if (ui >= 0 && oi > ui) {

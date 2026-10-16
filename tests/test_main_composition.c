@@ -421,6 +421,57 @@ int main(void)
     assert(telex.word_len == 1 && telex.boundary_count == 0);
     puts("Test 18 (consecutive spaces stay synchronized) passed.");
 
+    /* Test 19: uuw targets the first u, producing "ưu" in "lưu". */
+    telex_init(&telex);
+    const uint16_t keys19[] = { 38, 22, 22, 17 }; /* l u u w */
+    for (size_t i = 0; i < sizeof(keys19) / sizeof(keys19[0]); i++) {
+        send_key(&telex, &inject, keys19[i], 1);
+        send_key(&telex, &inject, keys19[i], 0);
+    }
+    bool luu_ok = telex.word_len == 3 &&
+                  telex.word[0].literal == 'l' &&
+                  telex.rendered_cps[0] == 'l' &&
+                  telex.word[1].vowel_type == VH_UHR &&
+                  telex.word[2].vowel_type == VH_U &&
+                  telex.rendered_cps[1] == VN_uhr &&
+                  telex.rendered_cps[2] == VN_u;
+
+    /* Test 20: uô+w should reshape both vowels to ươ. */
+    telex_init(&telex);
+    const uint16_t keys20[] = { 22, 24, 24, 17 }; /* u o o w */
+    for (size_t i = 0; i < sizeof(keys20) / sizeof(keys20[0]); i++) {
+        send_key(&telex, &inject, keys20[i], 1);
+        send_key(&telex, &inject, keys20[i], 0);
+    }
+    bool uo_ok = telex.word_len == 2 &&
+                 telex.word[0].vowel_type == VH_UHR &&
+                 telex.word[1].vowel_type == VH_OHR &&
+                 telex.rendered_cps[0] == VN_uhr &&
+                 telex.rendered_cps[1] == VN_ohr;
+
+    /* Test 21: q's u remains a glide in quuw. */
+    telex_init(&telex);
+    const uint16_t keys21[] = { 16, 22, 22, 17 }; /* q u u w */
+    for (size_t i = 0; i < sizeof(keys21) / sizeof(keys21[0]); i++) {
+        send_key(&telex, &inject, keys21[i], 1);
+        send_key(&telex, &inject, keys21[i], 0);
+    }
+    bool quu_ok = telex.word_len == 3 &&
+                  telex.word[0].literal == 'q' &&
+                  telex.word[1].vowel_type == VH_U &&
+                  telex.word[2].vowel_type == VH_UHR &&
+                  telex.rendered_cps[0] == 'q' &&
+                  telex.rendered_cps[1] == VN_u &&
+                  telex.rendered_cps[2] == VN_uhr;
+    if (!luu_ok || !uo_ok || !quu_ok) {
+        fprintf(stderr,
+                "W vowel targeting failed (uuw=%s, uôw=%s, quuw=%s).\n",
+                luu_ok ? "ok" : "wrong", uo_ok ? "ok" : "wrong",
+                quu_ok ? "ok" : "wrong");
+        return 1;
+    }
+    puts("Tests 19-21 (uuw -> lưu, uôw -> ươ, qu glide preserved) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }
