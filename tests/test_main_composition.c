@@ -542,6 +542,38 @@ int main(void)
     }
     puts("Tests 25-26 (oow -> ơ and owo -> ô) passed.");
 
+    /* Test 27: the trailing consonant does not block ơ -> ô. */
+    telex_init(&telex);
+    const uint16_t keys27[] = { 35, 24, 17, 50, 24 }; /* h o w m o */
+    for (size_t i = 0; i < sizeof(keys27) / sizeof(keys27[0]); i++) {
+        send_key(&telex, &inject, keys27[i], 1);
+        send_key(&telex, &inject, keys27[i], 0);
+    }
+    if (telex.word_len != 3 || telex.rendered_cps[0] != 'h' ||
+        telex.rendered_cps[1] != 0x00F4 || telex.rendered_cps[2] != 'm') {
+        fprintf(stderr, "howmo should produce hôm, got codepoints %x %x %x.\n",
+                telex.rendered_cps[0], telex.rendered_cps[1],
+                telex.rendered_cps[2]);
+        return 1;
+    }
+    puts("Test 27 (howmo -> hôm) passed.");
+
+    /* Test 28: the matching a/ă/â conversion also works before a coda. */
+    telex_init(&telex);
+    const uint16_t keys28[] = { 35, 30, 17, 50, 30 }; /* h a w m a */
+    for (size_t i = 0; i < sizeof(keys28) / sizeof(keys28[0]); i++) {
+        send_key(&telex, &inject, keys28[i], 1);
+        send_key(&telex, &inject, keys28[i], 0);
+    }
+    if (telex.word_len != 3 || telex.rendered_cps[0] != 'h' ||
+        telex.rendered_cps[1] != 0x00E2 || telex.rendered_cps[2] != 'm') {
+        fprintf(stderr, "hawma should produce hâm, got codepoints %x %x %x.\n",
+                telex.rendered_cps[0], telex.rendered_cps[1],
+                telex.rendered_cps[2]);
+        return 1;
+    }
+    puts("Test 28 (hawma -> hâm) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }

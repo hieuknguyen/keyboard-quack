@@ -235,6 +235,32 @@ int main(void)
     }
     puts("oow produces ơ and owo produces ô.");
 
+    /* A trailing consonant should not prevent ơ + o from becoming ô. */
+    reset_text_and_composition(&telex);
+    type_vk('H');
+    type_vk('O');
+    type_vk('W');
+    type_vk('M');
+    type_vk('O');
+    if (wcscmp(screen_text, L"h\u00f4m") != 0) {
+        fwprintf(stderr, L"howmo should produce hôm, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("howmo produces hôm.");
+
+    /* Keep the matching a + w + coda + a path consistent. */
+    reset_text_and_composition(&telex);
+    type_vk('H');
+    type_vk('A');
+    type_vk('W');
+    type_vk('M');
+    type_vk('A');
+    if (wcscmp(screen_text, L"h\u00e2m") != 0) {
+        fwprintf(stderr, L"hawma should produce hâm, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("hawma produces hâm.");
+
     /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
     reset_text_and_composition(&telex);
     send_vk(VK_LWIN, true);

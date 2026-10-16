@@ -1052,17 +1052,18 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
                                 keycode == KEY_E ? VH_ECI : VH_OCI;
             vn_vowel_t plain = keycode == KEY_A ? VH_A :
                                keycode == KEY_E ? VH_E : VH_O;
-            if (ctx->word_len > 0) {
-                vn_vowel_t *last_type =
-                    &ctx->word[ctx->word_len - 1].vowel_type;
-                if (keycode == KEY_A && *last_type == VH_ACR) {
-                    *last_type = VH_ACI;
+            /* The last vowel can be followed by a coda (e.g. hơm + o). */
+            for (int i = ctx->word_len - 1; i >= 0; i--) {
+                if (!token_is_vowel(&ctx->word[i])) continue;
+                if (keycode == KEY_A && ctx->word[i].vowel_type == VH_ACR) {
+                    ctx->word[i].vowel_type = VH_ACI;
                     return retype_word(ctx);
                 }
-                if (keycode == KEY_O && *last_type == VH_OHR) {
-                    *last_type = VH_OCI;
+                if (keycode == KEY_O && ctx->word[i].vowel_type == VH_OHR) {
+                    ctx->word[i].vowel_type = VH_OCI;
                     return retype_word(ctx);
                 }
+                break;
             }
             for (int i = ctx->word_len - 1; i >= 0; i--) {
                 if (ctx->word[i].vowel_type == marked) {
