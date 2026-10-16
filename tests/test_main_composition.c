@@ -574,6 +574,21 @@ int main(void)
     }
     puts("Test 28 (hawma -> hâm) passed.");
 
+    /* Test 29: o reshapes ơ in the ơi sequence to produce ôi. */
+    telex_init(&telex);
+    const uint16_t keys29[] = { 24, 17, 23, 24 }; /* o w i o */
+    for (size_t i = 0; i < sizeof(keys29) / sizeof(keys29[0]); i++) {
+        send_key(&telex, &inject, keys29[i], 1);
+        send_key(&telex, &inject, keys29[i], 0);
+    }
+    if (telex.word_len != 2 || telex.rendered_cps[0] != 0x00F4 ||
+        telex.rendered_cps[1] != 'i') {
+        fprintf(stderr, "owio should produce ôi, got codepoints %x %x.\n",
+                telex.rendered_cps[0], telex.rendered_cps[1]);
+        return 1;
+    }
+    puts("Test 29 (owio -> ôi) passed.");
+
     puts("\nALL INTEGRATION TESTS PASSED!");
     return 0;
 }

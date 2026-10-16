@@ -261,6 +261,18 @@ int main(void)
     }
     puts("hawma produces hâm.");
 
+    /* The trailing i in ơi should remain after converting ơ to ô. */
+    reset_text_and_composition(&telex);
+    type_vk('O');
+    type_vk('W');
+    type_vk('I');
+    type_vk('O');
+    if (wcscmp(screen_text, L"\u00f4i") != 0) {
+        fwprintf(stderr, L"owio should produce ôi, got '%ls'.\n", screen_text);
+        return 1;
+    }
+    puts("owio produces ôi.");
+
     /* Win+L can switch to a secure desktop before the hook sees Win key-up. */
     reset_text_and_composition(&telex);
     send_vk(VK_LWIN, true);

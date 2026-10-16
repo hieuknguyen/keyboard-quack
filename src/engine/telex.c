@@ -1052,16 +1052,27 @@ static telex_result_t telex_process_impl(telex_ctx_t *ctx, uint16_t keycode,
                                 keycode == KEY_E ? VH_ECI : VH_OCI;
             vn_vowel_t plain = keycode == KEY_A ? VH_A :
                                keycode == KEY_E ? VH_E : VH_O;
-            /* The last vowel can be followed by a coda (e.g. hơm + o). */
+            /*
+             * Shape conversion targets the final shaped vowel in the current
+             * syllable. Skip coda consonants and one trailing i/y glide so
+             * sequences like hơm+o and ơi+o can be reshaped in place.
+             */
+            bool skipped_glide = false;
             for (int i = ctx->word_len - 1; i >= 0; i--) {
-                if (!token_is_vowel(&ctx->word[i])) continue;
-                if (keycode == KEY_A && ctx->word[i].vowel_type == VH_ACR) {
+                vn_vowel_t vowel_type = ctx->word[i].vowel_type;
+                if (vowel_type == VH_NONE) continue;
+                if (keycode == KEY_A && vowel_type == VH_ACR) {
                     ctx->word[i].vowel_type = VH_ACI;
                     return retype_word(ctx);
                 }
-                if (keycode == KEY_O && ctx->word[i].vowel_type == VH_OHR) {
+                if (keycode == KEY_O && vowel_type == VH_OHR) {
                     ctx->word[i].vowel_type = VH_OCI;
                     return retype_word(ctx);
+                }
+                if (!skipped_glide &&
+                    (vowel_type == VH_I || vowel_type == VH_Y)) {
+                    skipped_glide = true;
+                    continue;
                 }
                 break;
             }
